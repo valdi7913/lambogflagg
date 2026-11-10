@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for lamb-og-flagg on 2026-11-10T22:19:38Z
+# fly.toml app configuration file generated for lambogflagg on 2026-11-10T22:19:38Z
 #
 # See https://docs.fly.io/reference/configuration for information about how to use this file.
 #
 
-app = 'lamb-og-flagg'
+app = 'lambogflagg'
 primary_region = 'lhr'
 
 [build]
