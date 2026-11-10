@@ -8,7 +8,7 @@ primary_region = 'lhr'
 
 [build]
 [env]
-  BASE_URL = 'https://lamb-og-flagg.fly.dev'
+  BASE_URL = 'https://lambogflagg.fly.dev'
   CLIENT_IP_HEADER = 'Fly-Client-IP'
   TIMEZONE = 'Atlantic/Reykjavik'
 
