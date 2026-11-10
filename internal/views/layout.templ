@@ -6,10 +6,15 @@ import "strings"
 
 templ Layout(title string) {
 	<!DOCTYPE html>
-	<html lang={ string(lang(ctx)) }>
+	<html lang={ string(lang(ctx)) }
+		if th := req(ctx).Theme; th != "" {
+			data-theme={ th }
+		}
+	>
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="color-scheme" content="light dark"/>
 			<meta name="htmx-config" content={ htmxConfig }/>
 			<title>{ title } · { clubName(ctx) }</title>
 			<link rel="icon" href={ asset("/static/favicon.svg") } type="image/svg+xml"/>
@@ -49,6 +54,7 @@ templ topbar(u *store.User) {
 				@navLink("/activity", t(ctx, "History"))
 			</nav>
 			<div class="usermenu">
+				@themeMenu()
 				@langSwitch()
 				<a href="/me" class={ templ.Classes(templ.KV("active", req(ctx).Path == "/me")) }>{ u.DisplayName }</a>
 				<form method="post" action="/logout" class="inline">
@@ -58,6 +64,27 @@ templ topbar(u *store.User) {
 			</div>
 		</div>
 	</header>
+}
+
+// themeMenu is a small dropdown for choosing the colour theme. It works as
+// plain links without JavaScript.
+templ themeMenu() {
+	<details class="theme-menu">
+		<summary title={ t(ctx, "Theme") }>
+			<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 2v16a8 8 0 0 1 0-16Z"></path></svg>
+			<span class="sr-only">{ t(ctx, "Theme") }</span>
+		</summary>
+		<ul class="theme-list">
+			for _, o := range themeOptions(ctx) {
+				<li>
+					<a href={ themeURL(ctx, o.Name) } data-theme-choice={ o.Name } aria-current={ ariaCurrent(currentTheme(ctx) == o.Name) }>
+						<span class={ "swatch", "swatch-" + o.Name } aria-hidden="true"></span>
+						{ o.Label }
+					</a>
+				</li>
+			}
+		</ul>
+	</details>
 }
 
 // langSwitch offers the other language, written in that language.
@@ -94,7 +121,10 @@ templ AuthLayout(title string) {
 			<div class="card auth-card">
 				<div class="auth-head">
 					<div class="auth-brand">{ clubName(ctx) }</div>
-					@langSwitch()
+					<div class="auth-switches">
+						@themeMenu()
+						@langSwitch()
+					</div>
 				</div>
 				{ children... }
 			</div>

@@ -92,7 +92,7 @@ func (s *Server) Handler() http.Handler {
 	static, _ := fs.Sub(staticFS, "static")
 	fileServer := http.FileServerFS(static)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("v") != "" {
+		if r.URL.Query().Get("v") != "" || strings.HasPrefix(r.URL.Path, "fonts/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		}
 		fileServer.ServeHTTP(w, r)
@@ -113,6 +113,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Public
 	mux.HandleFunc("GET /lang/{lang}", s.h(s.setLanguage))
+	mux.HandleFunc("GET /theme/{theme}", s.h(s.setTheme))
 	mux.HandleFunc("GET /login", s.h(s.loginPage))
 	mux.HandleFunc("POST /login", s.h(s.login))
 	mux.HandleFunc("POST /logout", s.h(s.logout))
@@ -269,7 +270,7 @@ func (s *Server) loadSession(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		rc := &appctx.Request{Path: r.URL.Path, ClubName: s.club(r.Context()), Lang: requestLang(r)}
+		rc := &appctx.Request{Path: r.URL.Path, ClubName: s.club(r.Context()), Lang: requestLang(r), Theme: requestTheme(r)}
 		if r.Method == http.MethodGet && !isHTMX(r) {
 			rc.URI = r.URL.RequestURI()
 		}
@@ -307,6 +308,37 @@ func (s *Server) setLanguage(w http.ResponseWriter, r *http.Request) error {
 		Name: langCookie, Value: string(l), Path: "/", MaxAge: 400 * 24 * 3600,
 		HttpOnly: true, Secure: s.cfg.CookieSecure, SameSite: http.SameSiteLaxMode,
 	})
+	http.Redirect(w, r, safeNext(r.URL.Query().Get("next")), http.StatusSeeOther)
+	return nil
+}
+
+// Theme cookie. It isn't HttpOnly so app.js can switch themes instantly
+// without a page load; the value is only ever one of the names below.
+const themeCookie = "bookclub_theme"
+
+var themes = map[string]bool{"light": true, "dark": true, "parchment": true}
+
+// requestTheme is the theme the person picked, or "" to follow the device.
+func requestTheme(r *http.Request) string {
+	if c, err := r.Cookie(themeCookie); err == nil && themes[c.Value] {
+		return c.Value
+	}
+	return ""
+}
+
+func (s *Server) setTheme(w http.ResponseWriter, r *http.Request) error {
+	name := r.PathValue("theme")
+	switch {
+	case name == "auto":
+		http.SetCookie(w, &http.Cookie{Name: themeCookie, Value: "", Path: "/", MaxAge: -1, SameSite: http.SameSiteLaxMode})
+	case themes[name]:
+		http.SetCookie(w, &http.Cookie{
+			Name: themeCookie, Value: name, Path: "/", MaxAge: 400 * 24 * 3600,
+			Secure: s.cfg.CookieSecure, SameSite: http.SameSiteLaxMode,
+		})
+	default:
+		return errNotFound
+	}
 	http.Redirect(w, r, safeNext(r.URL.Query().Get("next")), http.StatusSeeOther)
 	return nil
 }

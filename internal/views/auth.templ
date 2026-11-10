@@ -157,6 +157,18 @@ templ MePage(u *store.User, nameErr string, pwErrs map[string]string) {
 					<a class={ templ.Classes("btn", "btn-small", templ.KV("btn-primary", lang(ctx) == "is")) } href={ langURL(ctx, "is") } lang="is">Íslenska</a>
 				</div>
 			</section>
+			<section class="card">
+				<h2>{ t(ctx, "Theme") }</h2>
+				<p class="muted small">{ t(ctx, "Choose how the app looks. Your choice is remembered on this device.") }</p>
+				<div class="actions theme-buttons">
+					for _, o := range themeOptions(ctx) {
+						<a class="btn btn-small" href={ themeURL(ctx, o.Name) } data-theme-choice={ o.Name } aria-current={ ariaCurrent(currentTheme(ctx) == o.Name) }>
+							<span class={ "swatch", "swatch-" + o.Name } aria-hidden="true"></span>
+							{ o.Label }
+						</a>
+					}
+				</div>
+			</section>
 		</div>
 	}
 }

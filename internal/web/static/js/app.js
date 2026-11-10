@@ -139,6 +139,42 @@
     syncBallot(form);
   });
 
+  // Theme menu: switch instantly and remember the choice in a cookie (the
+  // links themselves work without JavaScript via /theme/{name}).
+  document.addEventListener("click", function (e) {
+    var choice = e.target.closest("[data-theme-choice]");
+    if (choice) {
+      e.preventDefault();
+      var name = choice.getAttribute("data-theme-choice");
+      var root = document.documentElement;
+      if (name === "auto") {
+        root.removeAttribute("data-theme");
+        document.cookie = "bookclub_theme=; path=/; max-age=0; samesite=lax";
+      } else {
+        root.setAttribute("data-theme", name);
+        document.cookie = "bookclub_theme=" + name + "; path=/; max-age=" + 400 * 86400 + "; samesite=lax" +
+          (location.protocol === "https:" ? "; secure" : "");
+      }
+      document.querySelectorAll("[data-theme-choice]").forEach(function (el) {
+        el.setAttribute("aria-current", el.getAttribute("data-theme-choice") === name ? "true" : "false");
+      });
+      var menu = choice.closest("details");
+      if (menu) menu.open = false;
+      return;
+    }
+    // Close an open theme menu when clicking elsewhere.
+    document.querySelectorAll("details.theme-menu[open]").forEach(function (menu) {
+      if (!menu.contains(e.target)) menu.open = false;
+    });
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape") return;
+    document.querySelectorAll("details.theme-menu[open]").forEach(function (menu) {
+      menu.open = false;
+      menu.querySelector("summary").focus();
+    });
+  });
+
   function init(root) {
     root.querySelectorAll("form.poll-form").forEach(syncMethodPanels);
     root.querySelectorAll("form[data-ballot]").forEach(function (form) {

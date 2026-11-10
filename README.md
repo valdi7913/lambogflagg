@@ -25,6 +25,18 @@ The app is in English and Icelandic.
   - English text is the key, wrapped in `t(ctx, "…")` in templates and `tr(r, "…")` or `s.flash(…)` in handlers.
   - Translations live in `internal/i18n/is.go`. `go test ./internal/i18n` fails if any phrase is missing or a translation's `%s`/`%d` placeholders don't match.
 
+## Themes
+
+There are four themes:
+
+- **Automatic** (the default) follows the device's light or dark setting.
+- **Light** and **Dark** fix the look regardless of the device.
+- **Parchment** is book-themed: aged paper, ink-brown text, an oxblood accent, a top bar like a leather book spine, and leather-bound placeholder covers. Large titles use MedievalSharp with an illuminated first letter.
+
+Each person picks a theme from the menu in the top bar or on their account page. The choice is remembered on that device. The server renders it straight into the page, so it doesn't flash the wrong colours while loading. Switching takes effect instantly.
+
+MedievalSharp is served from `internal/web/static/fonts` rather than from Google, so no third-party requests are made. It's licensed under the SIL Open Font License, and the licence text is included there as `OFL.txt`.
+
 ## Making votes trustworthy
 
 - **Rules lock** once the first ballot is cast. Options that are on someone's ballot can't be removed.

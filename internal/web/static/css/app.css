@@ -22,11 +22,38 @@
   --radius-s: 8px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --display: var(--serif); /* large titles */
   color-scheme: light;
 }
 
+/*
+ * Themes. <html data-theme="…"> is set by the server from the theme cookie
+ * (and switched instantly by app.js). Without it, the device setting decides
+ * between light and dark. The dark tokens are listed twice for that reason.
+ */
+:root[data-theme="dark"] {
+  --bg: #171614;
+  --surface: #211f1c;
+  --surface-2: #2a2723;
+  --text: #ece6dc;
+  --muted: #a59d90;
+  --border: #3a362f;
+  --accent: #7fbfa9;
+  --accent-hover: #9bd0bd;
+  --accent-soft: #23362f;
+  --accent-text: #10201b;
+  --danger: #ef8f7d;
+  --danger-soft: #3b2420;
+  --ok: #7fcf9c;
+  --ok-soft: #1f3327;
+  --attn: #f0b75c;
+  --attn-soft: #3a2d17;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --bg: #171614;
     --surface: #211f1c;
     --surface-2: #2a2723;
@@ -48,6 +75,36 @@
   }
 }
 
+/* Parchment: aged paper, iron-gall ink, oxblood leather and gold leaf. */
+:root[data-theme="parchment"] {
+  --bg: #ecdcb6;
+  --surface: #f6ebd0;
+  --surface-2: #e6d2a6;
+  --text: #2e2013;
+  --muted: #6a5234;
+  --border: #c9ab76;
+  --accent: #7a2a19;
+  --accent-hover: #5a1d10;
+  --accent-soft: #f0d8bd;
+  --accent-text: #fbf1dc;
+  --danger: #962716;
+  --danger-soft: #f2d2c2;
+  --ok: #46602a;
+  --ok-soft: #e1e2bd;
+  --attn: #865506;
+  --attn-soft: #f1dba7;
+  --gold: #a8812f;
+  --gold-light: #e8c97f;
+  --leather: #4a2a17;
+  --leather-dark: #321b0e;
+  --shadow: 0 1px 2px rgba(70, 45, 15, 0.18), inset 0 0 40px rgba(150, 105, 40, 0.10);
+  --radius: 6px;
+  --radius-s: 4px;
+  --font: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --display: "MedievalSharp", "Iowan Old Style", Palatino, Georgia, serif;
+  color-scheme: light;
+}
+
 *, *::before, *::after { box-sizing: border-box; }
 
 html { -webkit-text-size-adjust: 100%; }
@@ -59,7 +116,9 @@ body {
   font: 16px/1.55 var(--font);
 }
 
-h1, h2, h3 { font-family: var(--serif); line-height: 1.2; margin: 0 0 0.5em; font-weight: 600; }
+h1, h2 { font-family: var(--display); }
+h1, h2, h3 { line-height: 1.2; margin: 0 0 0.5em; font-weight: 600; }
+h3 { font-family: var(--serif); }
 h1 { font-size: 2rem; letter-spacing: -0.01em; }
 h2 { font-size: 1.3rem; }
 h3 { font-size: 1.05rem; margin-top: 1em; }
@@ -95,7 +154,7 @@ section > .prose, main > .prose { margin-bottom: 1.25rem; }
 .topbar-inner { display: flex; align-items: center; gap: 20px; min-height: 58px; flex-wrap: wrap; }
 .brand {
   display: inline-flex; align-items: center; gap: 8px;
-  font-family: var(--serif); font-weight: 700; font-size: 1.15rem;
+  font-family: var(--display); font-weight: 700; font-size: 1.15rem;
   color: var(--text); text-decoration: none;
 }
 .brand svg { color: var(--accent); }
@@ -433,7 +492,7 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 /* ---- Auth ---- */
 .auth-wrap { display: flex; justify-content: center; padding: 6vh 0; }
 .auth-card { width: 100%; max-width: 440px; padding: 32px; }
-.auth-brand { font-family: var(--serif); color: var(--accent); font-weight: 700; margin-bottom: 18px; }
+.auth-brand { font-family: var(--display); color: var(--accent); font-weight: 700; margin-bottom: 18px; }
 
 /* ---- Toast ---- */
 .toast {
@@ -448,3 +507,157 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 .langswitch { font-size: 0.85rem; }
 .auth-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 18px; }
 .auth-head .auth-brand { margin-bottom: 0; }
+
+/* ---- Theme menu ---- */
+.theme-menu { position: relative; }
+.theme-menu > summary {
+  list-style: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 999px; color: var(--muted);
+}
+.theme-menu > summary::-webkit-details-marker { display: none; }
+.theme-menu > summary:hover, .theme-menu[open] > summary { color: var(--text); background: var(--surface-2); }
+.theme-menu > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.theme-list {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 230px;
+  list-style: none; margin: 0; padding: 6px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-s); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+.theme-list a {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-s);
+  color: var(--text); text-decoration: none; font-size: 0.92rem; font-family: var(--font);
+}
+.theme-list a:hover { background: var(--surface-2); }
+.theme-list a[aria-current="true"]::after { content: "✓"; margin-left: auto; color: var(--accent); font-weight: 700; }
+.swatch {
+  width: 16px; height: 16px; border-radius: 999px; flex: none;
+  border: 1px solid rgba(0, 0, 0, 0.25); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+.swatch-auto { background: linear-gradient(135deg, #fffdf9 50%, #211f1c 50%); }
+.swatch-light { background: #fffdf9; }
+.swatch-dark { background: #211f1c; }
+.swatch-parchment { background: radial-gradient(circle at 35% 35%, #f6ebd0, #d8bf8a); border-color: #7a2a19; }
+.theme-buttons .btn[aria-current="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.auth-switches { display: flex; align-items: center; gap: 6px; }
+@media (max-width: 760px) {
+  .topbar .theme-list { right: auto; left: 0; }
+}
+
+/* ==== Parchment theme ==================================================== */
+
+@font-face {
+  font-family: "MedievalSharp";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/medievalsharp-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "MedievalSharp";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/medievalsharp-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* Aged paper: lighter in the middle, foxed and darker toward the edges. */
+[data-theme="parchment"] body {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(ellipse 70% 55% at 50% 35%, rgba(255, 248, 228, 0.65), transparent 70%),
+    radial-gradient(circle at 12% 18%, rgba(160, 110, 40, 0.10), transparent 22%),
+    radial-gradient(circle at 85% 70%, rgba(150, 100, 35, 0.10), transparent 25%),
+    radial-gradient(ellipse 120% 120% at 50% 50%, transparent 55%, rgba(110, 70, 20, 0.28) 100%);
+  background-attachment: fixed;
+  font-size: 17px;
+}
+[data-theme="parchment"] ::selection { background: rgba(122, 42, 25, 0.25); }
+
+/* Large titles in MedievalSharp, with an illuminated first letter. */
+[data-theme="parchment"] h1,
+[data-theme="parchment"] h2,
+[data-theme="parchment"] .brand,
+[data-theme="parchment"] .auth-brand { font-weight: 400; letter-spacing: 0.01em; }
+[data-theme="parchment"] h1 { font-size: 2.5rem; color: var(--leather); }
+[data-theme="parchment"] h1::first-letter { color: var(--accent); font-size: 1.3em; text-shadow: 0 1px 0 var(--gold-light); }
+[data-theme="parchment"] h2 { font-size: 1.5rem; color: var(--leather); }
+[data-theme="parchment"] .card h2 { border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+[data-theme="parchment"] .page-head {
+  padding-bottom: 14px; border-bottom: 2px solid transparent;
+  border-image: linear-gradient(90deg, transparent, var(--gold) 15%, var(--gold) 85%, transparent) 1;
+}
+@media (max-width: 760px) {
+  [data-theme="parchment"] h1 { font-size: 2rem; }
+}
+
+/* The top bar is a leather book spine with gold tooling. */
+[data-theme="parchment"] .topbar {
+  background: linear-gradient(180deg, #5c3520 0%, var(--leather) 45%, var(--leather-dark) 100%);
+  border-bottom: 3px double var(--gold);
+  box-shadow: 0 2px 8px rgba(50, 27, 14, 0.35);
+}
+[data-theme="parchment"] .brand { color: var(--gold-light); font-size: 1.4rem; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5); }
+[data-theme="parchment"] .brand svg { color: var(--gold-light); }
+[data-theme="parchment"] .mainnav a,
+[data-theme="parchment"] .usermenu a,
+[data-theme="parchment"] .usermenu .linkbtn,
+[data-theme="parchment"] .topbar .theme-menu > summary { color: #e6cf9c; }
+[data-theme="parchment"] .mainnav a:hover,
+[data-theme="parchment"] .usermenu a:hover,
+[data-theme="parchment"] .topbar .theme-menu > summary:hover,
+[data-theme="parchment"] .topbar .theme-menu[open] > summary { color: #fff3d3; background: rgba(232, 201, 127, 0.14); }
+[data-theme="parchment"] .mainnav a.active,
+[data-theme="parchment"] .usermenu a.active { color: var(--leather-dark); background: var(--gold-light); }
+[data-theme="parchment"] .topbar .theme-list a { color: var(--text); }
+[data-theme="parchment"] .topbar .theme-list a:hover { color: var(--text); background: var(--surface-2); }
+
+/* Pages of a book: slightly lighter vellum with a soft inner shadow. */
+[data-theme="parchment"] .card {
+  background: linear-gradient(180deg, rgba(255, 250, 235, 0.55), rgba(255, 250, 235, 0) 40%), var(--surface);
+  border-color: var(--border);
+}
+[data-theme="parchment"] .card.highlight { background: var(--accent-soft); border-color: var(--gold); }
+[data-theme="parchment"] input[type="text"],
+[data-theme="parchment"] input[type="password"],
+[data-theme="parchment"] input[type="search"],
+[data-theme="parchment"] input[type="url"],
+[data-theme="parchment"] input[type="number"],
+[data-theme="parchment"] input[type="datetime-local"],
+[data-theme="parchment"] textarea,
+[data-theme="parchment"] select { background: #fbf4e1; border-color: var(--border); font-family: var(--font); }
+
+/* Buttons: plain ones are vellum, the main one is an oxblood wax seal. */
+[data-theme="parchment"] .btn { background: var(--surface); border-color: var(--border); font-family: var(--font); }
+[data-theme="parchment"] .btn:hover { background: var(--surface-2); }
+[data-theme="parchment"] .btn-primary {
+  background: radial-gradient(circle at 40% 30%, #93351f, var(--accent) 60%, var(--accent-hover));
+  border-color: var(--gold); color: var(--accent-text);
+  box-shadow: inset 0 0 0 1px rgba(255, 220, 150, 0.25), 0 1px 2px rgba(50, 20, 5, 0.35);
+}
+[data-theme="parchment"] .btn-primary:hover { background: var(--accent-hover); color: var(--accent-text); }
+[data-theme="parchment"] .btn-ghost { background: transparent; border-color: transparent; }
+
+/* Placeholder covers look like leather bindings with a gilt title. */
+[data-theme="parchment"] .cover { box-shadow: 2px 3px 6px rgba(50, 27, 14, 0.35); border-radius: 2px 4px 4px 2px; }
+[data-theme="parchment"] .cover-placeholder {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.28) 0, rgba(0, 0, 0, 0) 8%), linear-gradient(160deg, #6e3a22, var(--leather) 60%, var(--leather-dark));
+  color: var(--gold-light); font-family: var(--display); font-weight: 400;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="parchment"] .tabs { background: var(--surface-2); }
+[data-theme="parchment"] .tabs a.active { background: var(--surface); color: var(--accent); }
+[data-theme="parchment"] .tag { background: var(--accent-soft); color: var(--accent); }
+[data-theme="parchment"] .badge { font-family: var(--font); }
+[data-theme="parchment"] .phases li.current { background: var(--accent); color: var(--accent-text); }
+[data-theme="parchment"] .pitch { border-left-color: var(--gold); }
+[data-theme="parchment"] .receipt { background: var(--surface-2); border: 1px dashed var(--gold); }
+[data-theme="parchment"] .receipt-code { color: var(--accent); }
+[data-theme="parchment"] progress::-webkit-progress-value { background: var(--accent); }
+[data-theme="parchment"] progress::-moz-progress-bar { background: var(--accent); }
+[data-theme="parchment"] .flash { background: var(--accent-soft); border-color: var(--gold); }
+[data-theme="parchment"] .flash-error { background: var(--danger-soft); border-color: var(--danger); }
+[data-theme="parchment"] .note { background: var(--attn-soft); border-left: 3px solid var(--gold); }
+[data-theme="parchment"] .toast { background: var(--leather); color: var(--gold-light); border: 1px solid var(--gold); }
+[data-theme="parchment"] .auth-card { border: 1px solid var(--gold); }

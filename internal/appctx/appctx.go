@@ -17,6 +17,7 @@ type Flash struct {
 type Request struct {
 	User     *store.User
 	Lang     i18n.Lang
+	Theme    string // "light", "dark", "parchment", or "" to follow the device
 	CSRF     string
 	Flash    *Flash
 	Path     string

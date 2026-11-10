@@ -31,6 +31,14 @@ var is = map[string]string{
 	"%d left.":     "%d eftir.",
 	"%d too many!": "%d of mörg!",
 
+	// ---- Themes ----
+	"Theme":                     "Útlit",
+	"Automatic (follow device)": "Sjálfvirkt (eins og tækið)",
+	"Light":                     "Ljóst",
+	"Dark":                      "Dökkt",
+	"Parchment":                 "Bókfell",
+	"Choose how the app looks. Your choice is remembered on this device.": "Veldu útlit appsins. Valið er munað á þessu tæki.",
+
 	// ---- History: field names and values ----
 	"title":                "titill",
 	"authors":              "höfundar",

@@ -77,6 +77,44 @@ func langURL(ctx context.Context, l i18n.Lang) templ.SafeURL {
 	return templ.SafeURL("/lang/" + string(l) + "?next=" + neturl.QueryEscape(next))
 }
 
+// ---- Themes ----
+
+// currentTheme is "auto", "light", "dark" or "parchment".
+func currentTheme(ctx context.Context) string {
+	if th := req(ctx).Theme; th != "" {
+		return th
+	}
+	return "auto"
+}
+
+// themeURL switches theme and comes back to the current page (the no-JS path;
+// app.js switches instantly instead).
+func themeURL(ctx context.Context, name string) templ.SafeURL {
+	next := req(ctx).URI
+	if next == "" {
+		next = "/"
+	}
+	return templ.SafeURL("/theme/" + name + "?next=" + neturl.QueryEscape(next))
+}
+
+type themeOption struct{ Name, Label string }
+
+func themeOptions(ctx context.Context) []themeOption {
+	return []themeOption{
+		{"auto", t(ctx, "Automatic (follow device)")},
+		{"light", t(ctx, "Light")},
+		{"dark", t(ctx, "Dark")},
+		{"parchment", t(ctx, "Parchment")},
+	}
+}
+
+func ariaCurrent(on bool) string {
+	if on {
+		return "true"
+	}
+	return "false"
+}
+
 // ---- Time formatting ----
 
 func fmtDate(ctx context.Context, t time.Time) string         { return i18n.Date(lang(ctx), t) }
