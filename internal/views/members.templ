@@ -1,0 +1,189 @@
+package views
+
+import "bookclub/internal/store"
+
+type MembersData struct {
+	Members      []*store.User
+	Invites      []*store.Invite
+	BaseURL      string
+	NewLink      string
+	NewLinkLabel string
+}
+
+templ MembersPage(d MembersData) {
+	@Layout("Members") {
+		<div class="page-head">
+			<h1>Members</h1>
+		</div>
+		if d.NewLink != "" {
+			<div class="card highlight">
+				<h2>{ d.NewLinkLabel }</h2>
+				<p class="muted small">Send this link to them yourself (chat, text, email…). It works once.</p>
+				<div class="copy-row">
+					<input type="text" readonly value={ d.NewLink } id="new-link" aria-label="Link"/>
+					<button type="button" class="btn btn-small" data-copy="#new-link">Copy</button>
+				</div>
+			</div>
+		}
+		<div class="grid-2">
+			<section class="card">
+				<h2>Club members ({ itoa(activeCount(d.Members)) })</h2>
+				<ul class="member-list">
+					for _, m := range d.Members {
+						<li class={ templ.Classes("member", templ.KV("inactive", !m.Active())) }>
+							<div>
+								<strong>{ m.DisplayName }</strong>
+								<span class="muted small">{ "@" + m.Username }</span>
+								if m.IsAdmin {
+									<span class="badge">Admin</span>
+								}
+								if !m.Active() {
+									<span class="badge badge-muted">Deactivated</span>
+								}
+								<div class="muted small">
+									Joined { fmtDate(m.CreatedAt) }
+									if m.InvitedByName != "" {
+										{ " · invited by " + m.InvitedByName }
+									}
+								</div>
+							</div>
+							<div class="member-actions">
+								if m.Active() && m.ID != myID(ctx) {
+									<form method="post" action={ url("/members/%d/reset-link", m.ID) } class="inline"
+										data-confirm={ "Create a password reset link for " + m.DisplayName + "? This is recorded in the history." }>
+										@csrfField()
+										<button type="submit" class="linkbtn small">Reset link</button>
+									</form>
+								}
+								if currentUser(ctx).IsAdmin && m.ID != myID(ctx) {
+									<form method="post" action={ url("/members/%d/admin", m.ID) } class="inline">
+										@csrfField()
+										if m.IsAdmin {
+											<input type="hidden" name="admin" value="0"/>
+											<button type="submit" class="linkbtn small">Remove admin</button>
+										} else if m.Active() {
+											<input type="hidden" name="admin" value="1"/>
+											<button type="submit" class="linkbtn small">Make admin</button>
+										}
+									</form>
+									<form method="post" action={ url("/members/%d/active", m.ID) } class="inline"
+										if m.Active() {
+											data-confirm={ "Deactivate " + m.DisplayName + "? They won't be able to log in. Their ballots and comments stay." }
+										}
+									>
+										@csrfField()
+										if m.Active() {
+											<input type="hidden" name="active" value="0"/>
+											<button type="submit" class="linkbtn small danger">Deactivate</button>
+										} else {
+											<input type="hidden" name="active" value="1"/>
+											<button type="submit" class="linkbtn small">Reactivate</button>
+										}
+									</form>
+								}
+							</div>
+						</li>
+					}
+				</ul>
+			</section>
+			<div class="stack-lg">
+				<section class="card">
+					<h2>Invite someone</h2>
+					<p class="muted small">Any member can invite. Each link works for one sign-up and expires after 14 days.</p>
+					<form method="post" action="/invites" class="stack">
+						@csrfField()
+						<label>
+							Who is it for? (optional)
+							<input type="text" name="note" maxlength="100" placeholder="e.g. Sam from work"/>
+						</label>
+						<button type="submit" class="btn btn-primary">Create invite link</button>
+					</form>
+					if len(d.Invites) > 0 {
+						<h3>Recent invites</h3>
+						<ul class="invite-list">
+							for _, inv := range d.Invites {
+								<li>
+									<div>
+										if inv.Note != "" {
+											<strong>{ inv.Note }</strong>
+										} else {
+											<strong>Invite</strong>
+										}
+										<div class="muted small">
+											by { emptyDash(inv.CreatedByName) } · { inviteState(inv) }
+										</div>
+										if inv.Usable() {
+											<div class="copy-row">
+												<input type="text" readonly value={ d.BaseURL + "/join/" + inv.Token } id={ "inv-" + itoa(inv.ID) } aria-label="Invite link"/>
+												<button type="button" class="btn btn-small" data-copy={ "#inv-" + itoa(inv.ID) }>Copy</button>
+											</div>
+										}
+									</div>
+									if inv.Usable() {
+										<form method="post" action={ url("/invites/%d/revoke", inv.ID) } class="inline">
+											@csrfField()
+											<button type="submit" class="linkbtn small">Revoke</button>
+										</form>
+									}
+								</li>
+							}
+						</ul>
+					}
+				</section>
+				<section class="card">
+					<h2>Club name</h2>
+					<form method="post" action="/settings/club-name" class="stack">
+						@csrfField()
+						<input type="text" name="club_name" value={ clubName(ctx) } maxlength="80" required aria-label="Club name"/>
+						<div><button type="submit" class="btn btn-small">Rename club</button></div>
+					</form>
+				</section>
+			</div>
+		</div>
+	}
+}
+
+func activeCount(us []*store.User) int {
+	n := 0
+	for _, u := range us {
+		if u.Active() {
+			n++
+		}
+	}
+	return n
+}
+
+func inviteState(i *store.Invite) string {
+	switch {
+	case i.UsedAt != nil:
+		if i.UsedByName != "" {
+			return "used by " + i.UsedByName
+		}
+		return "used"
+	case i.RevokedAt != nil:
+		return "revoked"
+	case !i.Usable():
+		return "expired"
+	}
+	return "expires " + until(i.ExpiresAt)
+}
+
+type ActivityData struct {
+	Items      []store.Activity
+	NextBefore int64
+}
+
+templ ActivityPage(d ActivityData) {
+	@Layout("History") {
+		<div class="page-head">
+			<h1>History</h1>
+		</div>
+		<p class="muted">Everything anyone has added, changed or deleted, newest first.</p>
+		<section class="card">
+			@activityList(d.Items, true)
+			if d.NextBefore > 0 {
+				<p><a href={ url("/activity?before=%d", d.NextBefore) }>Older →</a></p>
+			}
+		</section>
+	}
+}

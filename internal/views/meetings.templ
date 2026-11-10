@@ -1,0 +1,240 @@
+package views
+
+import "bookclub/internal/store"
+
+type MeetingsData struct {
+	Upcoming []*store.Meeting
+	Past     []*store.Meeting
+}
+
+templ MeetingsPage(d MeetingsData) {
+	@Layout("Meetings") {
+		<div class="page-head">
+			<h1>Meetings</h1>
+			<div class="actions">
+				<a class="btn btn-primary" href="/meetings/new">Plan a meeting</a>
+			</div>
+		</div>
+		<section class="stack">
+			<h2>Upcoming</h2>
+			if len(d.Upcoming) == 0 {
+				<div class="card empty"><p>Nothing planned yet.</p></div>
+			}
+			for _, m := range d.Upcoming {
+				@meetingCard(m)
+			}
+		</section>
+		<section class="stack">
+			<h2>Past meetings</h2>
+			if len(d.Past) == 0 {
+				<div class="card empty"><p>No past meetings recorded yet. You can add old meetings too — just pick a date in the past.</p></div>
+			}
+			for _, m := range d.Past {
+				@meetingCard(m)
+			}
+		</section>
+	}
+}
+
+type MeetingData struct {
+	Meeting  *store.Meeting
+	Polls    []*store.Poll
+	AllBooks []*store.Book
+	Comments CommentsData
+	History  []store.Activity
+}
+
+templ MeetingPage(d MeetingData) {
+	@Layout(meetingName(d.Meeting)) {
+		<p class="crumbs"><a href="/meetings">Meetings</a></p>
+		<div class="page-head">
+			<div>
+				<h1>{ meetingName(d.Meeting) }</h1>
+				<p class="lead">
+					{ fmtMeetingTime(d.Meeting.StartsAt) }
+					if d.Meeting.Place != "" {
+						{ " · " + d.Meeting.Place }
+					}
+				</p>
+			</div>
+			<div class="actions">
+				<a class="btn btn-small" href={ url("/meetings/%d/edit", d.Meeting.ID) }>Edit</a>
+				<form method="post" action={ url("/meetings/%d/delete", d.Meeting.ID) } class="inline" data-confirm="Delete this meeting? Its comments will be deleted too. Books stay in the library.">
+					@csrfField()
+					<button type="submit" class="btn btn-small btn-danger">Delete</button>
+				</form>
+			</div>
+		</div>
+		@multiline(d.Meeting.Description)
+		@MeetingBooks(d.Meeting, d.AllBooks, "")
+		<section class="card">
+			<div class="section-head">
+				<h2>Votes for this meeting</h2>
+				<a class="btn btn-small" href={ url("/polls/new?meeting=%d", d.Meeting.ID) }>Start a vote</a>
+			</div>
+			if len(d.Polls) == 0 {
+				<p class="muted">No votes linked to this meeting.</p>
+			} else {
+				<div class="stack">
+					for _, p := range d.Polls {
+						@pollRow(p, false)
+					}
+				</div>
+			}
+		</section>
+		@CommentsSection(d.Comments)
+		@history(d.History)
+	}
+}
+
+templ MeetingBooks(m *store.Meeting, all []*store.Book, errMsg string) {
+	<section class="card" id="meeting-books">
+		<h2>Books</h2>
+		if errMsg != "" {
+			<p class="field-error">{ errMsg }</p>
+		}
+		if len(m.Books) == 0 {
+			<p class="muted">No books yet. A meeting can have none, one, or several.</p>
+		} else {
+			<ul class="book-rows">
+				for _, mb := range m.Books {
+					<li class="book-row">
+						@cover(mb.Book, "s")
+						<div class="book-row-body">
+							<a href={ url("/books/%d", mb.Book.ID) }><strong>{ mb.Book.Title }</strong></a>
+							<div class="muted small">{ bookByline(mb.Book) }</div>
+							if mb.Note != "" {
+								<div class="small">{ mb.Note }</div>
+							}
+							<div class="small">@bookLinks(mb.Book)</div>
+						</div>
+						<form method="post" action={ url("/meetings/%d/books/%d/remove", m.ID, mb.Book.ID) }
+							hx-post={ path("/meetings/%d/books/%d/remove", m.ID, mb.Book.ID) } hx-target="#meeting-books" hx-swap="outerHTML"
+							hx-confirm="Remove this book from the meeting?">
+							@csrfField()
+							<button type="submit" class="linkbtn small">Remove</button>
+						</form>
+					</li>
+				}
+			</ul>
+		}
+		<details class="add-panel">
+			<summary>Add a book to this meeting</summary>
+			<form method="post" action={ url("/meetings/%d/books", m.ID) }
+				hx-post={ path("/meetings/%d/books", m.ID) } hx-target="#meeting-books" hx-swap="outerHTML" class="stack">
+				@csrfField()
+				<label>
+					Book
+					@bookSelect(all, m)
+				</label>
+				<label>
+					Note (optional)
+					<input type="text" name="note" maxlength="300" placeholder="e.g. chapters 1–10, Anna's pick, read either one"/>
+				</label>
+				<div class="actions">
+					<button type="submit" class="btn btn-small btn-primary">Add</button>
+					<a href={ url("/books/new") } class="small">Book not in the library yet?</a>
+				</div>
+			</form>
+		</details>
+	</section>
+}
+
+templ bookSelect(all []*store.Book, m *store.Meeting) {
+	<select name="book_id" required>
+		<option value="">Choose a book…</option>
+		<optgroup label="Want to read">
+			for _, b := range all {
+				if b.OnWishlist && !meetingHasBook(m, b.ID) {
+					<option value={ itoa(b.ID) }>{ b.Title }{ authorSuffix(b) }</option>
+				}
+			}
+		</optgroup>
+		<optgroup label="Rest of the library">
+			for _, b := range all {
+				if !b.OnWishlist && !meetingHasBook(m, b.ID) {
+					<option value={ itoa(b.ID) }>{ b.Title }{ authorSuffix(b) }</option>
+				}
+			}
+		</optgroup>
+	</select>
+}
+
+func meetingHasBook(m *store.Meeting, id int64) bool {
+	if m == nil {
+		return false
+	}
+	for _, mb := range m.Books {
+		if mb.Book.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func authorSuffix(b *store.Book) string {
+	if b.Authors == "" {
+		return ""
+	}
+	return " — " + b.Authors
+}
+
+type MeetingFormData struct {
+	Meeting  *store.Meeting
+	StartsAt string
+	IsNew    bool
+	Errors   map[string]string
+}
+
+templ MeetingFormPage(d MeetingFormData) {
+	@Layout(meetingFormTitle(d.IsNew)) {
+		<div class="page-head"><h1>{ meetingFormTitle(d.IsNew) }</h1></div>
+		<section class="card narrow">
+			<form method="post" class="stack"
+				if d.IsNew {
+					action="/meetings"
+				} else {
+					action={ url("/meetings/%d", d.Meeting.ID) }
+				}
+			>
+				@csrfField()
+				<label>
+					Title (optional)
+					<input type="text" name="title" value={ d.Meeting.Title } maxlength="200" placeholder="e.g. Summer picnic edition"/>
+				</label>
+				<label>
+					Date and time
+					<input type="datetime-local" name="starts_at" value={ d.StartsAt }/>
+					<span class="hint">Leave empty if it isn't decided yet.</span>
+					@fieldError(d.Errors, "starts_at")
+				</label>
+				<label>
+					Place (optional)
+					<input type="text" name="place" value={ d.Meeting.Place } maxlength="200"/>
+				</label>
+				<label>
+					Description (optional)
+					<textarea name="description" rows="6" maxlength="20000" placeholder="Anything worth writing down: plans, discussion questions, how it went…">{ d.Meeting.Description }</textarea>
+				</label>
+				<div class="actions">
+					<button type="submit" class="btn btn-primary">Save meeting</button>
+					if d.IsNew {
+						<a href="/meetings" class="btn btn-ghost">Cancel</a>
+					} else {
+						<a href={ url("/meetings/%d", d.Meeting.ID) } class="btn btn-ghost">Cancel</a>
+					}
+				</div>
+				if d.IsNew {
+					<p class="muted small">You can add books after saving.</p>
+				}
+			</form>
+		</section>
+	}
+}
+
+func meetingFormTitle(isNew bool) string {
+	if isNew {
+		return "Plan a meeting"
+	}
+	return "Edit meeting"
+}

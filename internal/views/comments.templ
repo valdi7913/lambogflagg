@@ -1,0 +1,94 @@
+package views
+
+import "context"
+import "bookclub/internal/store"
+
+type CommentsData struct {
+	SubjectType string
+	SubjectID   int64
+	Comments    []*store.Comment
+	Error       string
+}
+
+templ CommentsSection(d CommentsData) {
+	<section class="card comments" id="comments">
+		<h2>Comments ({ itoa(len(d.Comments)) })</h2>
+		if len(d.Comments) == 0 {
+			<p class="muted">No comments yet.</p>
+		} else {
+			<ul class="comment-list">
+				for _, c := range d.Comments {
+					@CommentItem(c)
+				}
+			</ul>
+		}
+		<form method="post" action="/comments" hx-post="/comments" hx-target="#comments" hx-swap="outerHTML" class="stack comment-form">
+			@csrfField()
+			<input type="hidden" name="subject_type" value={ d.SubjectType }/>
+			<input type="hidden" name="subject_id" value={ itoa(d.SubjectID) }/>
+			<label class="sr-only" for={ "comment-body-" + d.SubjectType }>Add a comment</label>
+			<textarea id={ "comment-body-" + d.SubjectType } name="body" rows="3" maxlength="10000" required placeholder="Add a comment…"></textarea>
+			if d.Error != "" {
+				<p class="field-error">{ d.Error }</p>
+			}
+			<div><button type="submit" class="btn btn-small btn-primary">Post comment</button></div>
+		</form>
+	</section>
+}
+
+templ CommentItem(c *store.Comment) {
+	<li class="comment" id={ "comment-" + itoa(c.ID) }>
+		<div class="comment-meta">
+			<strong>{ c.UserName }</strong>
+			<time datetime={ isoTime(c.CreatedAt) } title={ fmtDateTime(c.CreatedAt) }>{ ago(c.CreatedAt) }</time>
+			if c.EditedAt != nil {
+				<span class="muted small" title={ fmtDateTime(*c.EditedAt) }>(edited)</span>
+			}
+		</div>
+		<div class="prose">{ c.Body }</div>
+		if canEditComment(ctx, c) {
+			<div class="comment-actions">
+				if isMe(ctx, c.UserID) {
+					<button type="button" class="linkbtn small" hx-get={ path("/comments/%d/edit", c.ID) }
+						hx-target={ "#comment-" + itoa(c.ID) } hx-swap="outerHTML">Edit</button>
+				}
+				<form method="post" action={ url("/comments/%d/delete", c.ID) } class="inline"
+					hx-post={ path("/comments/%d/delete", c.ID) } hx-target={ "#comment-" + itoa(c.ID) } hx-swap="outerHTML"
+					hx-confirm="Delete this comment?">
+					@csrfField()
+					<button type="submit" class="linkbtn small">Delete</button>
+				</form>
+			</div>
+		}
+	</li>
+}
+
+templ CommentEdit(c *store.Comment, errMsg string) {
+	<li class="comment" id={ "comment-" + itoa(c.ID) }>
+		<form method="post" action={ url("/comments/%d", c.ID) } hx-post={ path("/comments/%d", c.ID) }
+			hx-target={ "#comment-" + itoa(c.ID) } hx-swap="outerHTML" class="stack">
+			@csrfField()
+			<textarea name="body" rows="3" maxlength="10000" required>{ c.Body }</textarea>
+			if errMsg != "" {
+				<p class="field-error">{ errMsg }</p>
+			}
+			<div class="actions">
+				<button type="submit" class="btn btn-small btn-primary">Save</button>
+				<button type="button" class="btn btn-small btn-ghost" hx-get={ path("/comments/%d", c.ID) }
+					hx-target={ "#comment-" + itoa(c.ID) } hx-swap="outerHTML">Cancel</button>
+			</div>
+		</form>
+	</li>
+}
+
+templ CommentDeleted() {
+	<li class="comment muted small">Comment deleted.</li>
+}
+
+func canEditComment(ctx context.Context, c *store.Comment) bool {
+	u := currentUser(ctx)
+	if u == nil {
+		return false
+	}
+	return u.IsAdmin || (c.UserID != nil && *c.UserID == u.ID)
+}

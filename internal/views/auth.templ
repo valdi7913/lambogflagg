@@ -1,0 +1,154 @@
+package views
+
+import "bookclub/internal/store"
+
+templ LoginPage(username, next, errMsg string) {
+	@AuthLayout("Log in") {
+		<h1>Log in</h1>
+		if errMsg != "" {
+			<div class="flash flash-error">{ errMsg }</div>
+		}
+		<form method="post" action="/login" class="stack">
+			<input type="hidden" name="next" value={ next }/>
+			<label>
+				Username
+				<input type="text" name="username" value={ username } autocomplete="username" autocapitalize="none" required autofocus/>
+			</label>
+			<label>
+				Password
+				<input type="password" name="password" autocomplete="current-password" required/>
+			</label>
+			<button type="submit" class="btn btn-primary">Log in</button>
+		</form>
+		<p class="muted small">New here? You need an invite link from a member. Forgot your password? Ask any member to make you a reset link.</p>
+	}
+}
+
+type AccountForm struct {
+	DisplayName string
+	Username    string
+	Errors      map[string]string
+}
+
+templ accountFields(f AccountForm) {
+	<label>
+		Your name
+		<input type="text" name="display_name" value={ f.DisplayName } maxlength="60" required autocomplete="name"/>
+		<span class="hint">How you'll appear to the club.</span>
+		@fieldError(f.Errors, "display_name")
+	</label>
+	<label>
+		Username
+		<input type="text" name="username" value={ f.Username } maxlength="40" pattern="[A-Za-z0-9_.\-]+" required autocapitalize="none" autocomplete="username"/>
+		<span class="hint">For logging in. Letters, numbers, dots, dashes and underscores.</span>
+		@fieldError(f.Errors, "username")
+	</label>
+	@passwordFields(f.Errors)
+}
+
+templ passwordFields(errs map[string]string) {
+	<label>
+		Password
+		<input type="password" name="password" minlength="8" required autocomplete="new-password"/>
+		<span class="hint">At least 8 characters.</span>
+		@fieldError(errs, "password")
+	</label>
+	<label>
+		Repeat password
+		<input type="password" name="password2" minlength="8" required autocomplete="new-password"/>
+		@fieldError(errs, "password2")
+	</label>
+}
+
+templ SetupPage(token string, valid bool, f AccountForm) {
+	@AuthLayout("Set up") {
+		<h1>Welcome!</h1>
+		if !valid {
+			<p>This app has no accounts yet. To create the first one, open the setup link printed in the server's log when it started.</p>
+		} else {
+			<p>Create the first account. You'll be an admin and can then invite your friends.</p>
+			<form method="post" action="/setup" class="stack">
+				<input type="hidden" name="token" value={ token }/>
+				<label>
+					Club name
+					<input type="text" name="club_name" value={ clubName(ctx) } maxlength="80" required/>
+				</label>
+				@accountFields(f)
+				<button type="submit" class="btn btn-primary">Create account</button>
+			</form>
+		}
+	}
+}
+
+templ JoinPage(token string, inv *store.Invite, f AccountForm) {
+	@AuthLayout("Join") {
+		if inv == nil || !inv.Usable() {
+			<h1>Invite not valid</h1>
+			<p>This invite link has expired, was already used, or was revoked. Ask a member for a new one.</p>
+			<p><a href="/login">Log in instead</a></p>
+		} else {
+			<h1>Join { clubName(ctx) }</h1>
+			if inv.CreatedByName != "" {
+				<p class="muted">{ inv.CreatedByName } invited you.</p>
+			}
+			<form method="post" action={ url("/join/%s", token) } class="stack">
+				@accountFields(f)
+				<button type="submit" class="btn btn-primary">Create my account</button>
+			</form>
+		}
+	}
+}
+
+templ ResetPage(token string, user *store.User, valid bool, errs map[string]string) {
+	@AuthLayout("Reset password") {
+		if !valid {
+			<h1>Link not valid</h1>
+			<p>This reset link has expired or was already used. Ask a member for a new one.</p>
+		} else {
+			<h1>Choose a new password</h1>
+			<p class="muted">For { user.DisplayName } ({ user.Username }).</p>
+			<form method="post" action={ url("/reset/%s", token) } class="stack">
+				@passwordFields(errs)
+				<button type="submit" class="btn btn-primary">Set password and log in</button>
+			</form>
+		}
+	}
+}
+
+templ MePage(u *store.User, nameErr string, pwErrs map[string]string) {
+	@Layout("Your account") {
+		<div class="page-head">
+			<h1>Your account</h1>
+		</div>
+		<div class="grid-2">
+			<section class="card">
+				<h2>Profile</h2>
+				<form method="post" action="/me" class="stack">
+					@csrfField()
+					<label>
+						Your name
+						<input type="text" name="display_name" value={ u.DisplayName } maxlength="60" required/>
+						if nameErr != "" {
+							<p class="field-error">{ nameErr }</p>
+						}
+					</label>
+					<p class="muted small">Username: <strong>{ u.Username }</strong> · member since { fmtDate(u.CreatedAt) }</p>
+					<button type="submit" class="btn">Save</button>
+				</form>
+			</section>
+			<section class="card">
+				<h2>Change password</h2>
+				<form method="post" action="/me/password" class="stack">
+					@csrfField()
+					<label>
+						Current password
+						<input type="password" name="current" required autocomplete="current-password"/>
+						@fieldError(pwErrs, "current")
+					</label>
+					@passwordFields(pwErrs)
+					<button type="submit" class="btn">Change password</button>
+				</form>
+			</section>
+		</div>
+	}
+}

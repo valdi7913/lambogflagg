@@ -1,0 +1,136 @@
+package views
+
+import "bookclub/internal/store"
+
+type HomeData struct {
+	Upcoming      []*store.Meeting
+	LastMeeting   *store.Meeting
+	OpenPolls     []*store.Poll
+	Voted         map[int64]bool
+	Activity      []store.Activity
+	WishlistCount int
+}
+
+templ HomePage(d HomeData) {
+	@Layout("Home") {
+		<div class="page-head">
+			<h1>Hi, { currentUser(ctx).DisplayName }</h1>
+			<div class="actions">
+				<a class="btn" href="/books/new">Add a book</a>
+				<a class="btn" href="/meetings/new">Plan a meeting</a>
+				<a class="btn btn-primary" href="/polls/new">Start a vote</a>
+			</div>
+		</div>
+		<div class="home-grid">
+			<div class="stack-lg">
+				<section>
+					<h2>Next up</h2>
+					if len(d.Upcoming) == 0 {
+						<div class="card empty">
+							<p>No upcoming meetings. <a href="/meetings/new">Plan one</a>.</p>
+						</div>
+					} else {
+						for _, m := range d.Upcoming {
+							@meetingCard(m)
+						}
+					}
+				</section>
+				<section>
+					<h2>Open votes</h2>
+					if len(d.OpenPolls) == 0 {
+						<div class="card empty">
+							<p>No votes running. <a href="/polls/new">Start one</a> when it's time to pick the next book.</p>
+						</div>
+					} else {
+						<div class="stack">
+							for _, p := range d.OpenPolls {
+								@pollRow(p, d.Voted[p.ID])
+							}
+						</div>
+					}
+				</section>
+				if d.LastMeeting != nil {
+					<section>
+						<h2>Last meeting</h2>
+						@meetingCard(d.LastMeeting)
+					</section>
+				}
+			</div>
+			<aside class="stack-lg">
+				<section class="card">
+					<h2>Want to read</h2>
+					<p><a href="/books?filter=wishlist">{ plural(d.WishlistCount, "book", "books") }</a> on the club's list.</p>
+					<p><a href="/books/new" class="btn btn-small">Suggest a book</a></p>
+				</section>
+				<section class="card">
+					<h2>Recent activity</h2>
+					@activityList(d.Activity, true)
+					<p><a href="/activity">Full history →</a></p>
+				</section>
+			</aside>
+		</div>
+	}
+}
+
+templ meetingCard(m *store.Meeting) {
+	<article class="card meeting-card">
+		<div class="meeting-card-head">
+			<div>
+				<h3><a href={ url("/meetings/%d", m.ID) }>{ meetingName(m) }</a></h3>
+				<p class="muted">
+					{ fmtMeetingTime(m.StartsAt) }
+					if m.Place != "" {
+						{ " · " + m.Place }
+					}
+				</p>
+			</div>
+		</div>
+		if len(m.Books) > 0 {
+			<ul class="mini-books">
+				for _, mb := range m.Books {
+					<li>
+						<a href={ url("/books/%d", mb.Book.ID) } class="mini-book">
+							@cover(mb.Book, "s")
+							<span>
+								<strong>{ mb.Book.Title }</strong>
+								<span class="muted">{ mb.Book.Authors }</span>
+								if mb.Note != "" {
+									<span class="small">{ mb.Note }</span>
+								}
+							</span>
+						</a>
+					</li>
+				}
+			</ul>
+		} else {
+			<p class="muted small">No books attached yet.</p>
+		}
+	</article>
+}
+
+templ pollRow(p *store.Poll, voted bool) {
+	<a class="card poll-row" href={ url("/polls/%d", p.ID) }>
+		<div>
+			<strong>{ p.Title }</strong>
+			<div class="muted small">
+				{ p.Method.Label() } · { plural(p.OptionCount, "option", "options") }
+				if p.Method.HasBallots() {
+					{ " · " + plural(p.BallotCount, "ballot", "ballots") }
+				}
+				if p.ClosesAt != nil && p.Status == store.StatusVoting {
+					{ " · closes " + until(*p.ClosesAt) }
+				}
+			</div>
+		</div>
+		<div class="poll-row-badges">
+			<span class={ statusClass(p) }>{ statusLabel(p) }</span>
+			if p.Status == store.StatusVoting && p.Method.HasBallots() {
+				if voted {
+					<span class="badge badge-ok">You voted</span>
+				} else {
+					<span class="badge badge-attn">Your vote needed</span>
+				}
+			}
+		</div>
+	</a>
+}

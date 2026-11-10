@@ -1,0 +1,164 @@
+package views
+
+import "bookclub/internal/store"
+import "strings"
+
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="htmx-config" content={ htmxConfig }/>
+			<title>{ title } · { clubName(ctx) }</title>
+			<link rel="icon" href={ asset("/static/favicon.svg") } type="image/svg+xml"/>
+			<link rel="stylesheet" href={ asset("/static/css/app.css") }/>
+			<script src={ asset("/static/js/htmx.min.js") } defer></script>
+			<script src={ asset("/static/js/app.js") } defer></script>
+		</head>
+		<body hx-headers={ csrfHeaders(ctx) }>
+			if u := currentUser(ctx); u != nil {
+				@topbar(u)
+			}
+			<main class="container" id="main">
+				@flash()
+				{ children... }
+			</main>
+			<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+		</body>
+	</html>
+}
+
+templ topbar(u *store.User) {
+	<header class="topbar">
+		<div class="container topbar-inner">
+			<a class="brand" href="/">
+				<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5a1.5 1.5 0 0 0 0 3H20v0H6.5A2.5 2.5 0 0 1 4 19.5v-15Zm2.5-.5a.5.5 0 0 0-.5.5v12.55c.16-.03.33-.05.5-.05H18V4H6.5Z"></path></svg>
+				<span>{ clubName(ctx) }</span>
+			</a>
+			<nav class="mainnav" aria-label="Main">
+				@navLink("/", "Home")
+				@navLink("/meetings", "Meetings")
+				@navLink("/books", "Books")
+				@navLink("/polls", "Votes")
+				@navLink("/members", "Members")
+				@navLink("/activity", "History")
+			</nav>
+			<div class="usermenu">
+				<a href="/me" class={ templ.Classes(templ.KV("active", req(ctx).Path == "/me")) }>{ u.DisplayName }</a>
+				<form method="post" action="/logout" class="inline">
+					@csrfField()
+					<button type="submit" class="linkbtn">Log out</button>
+				</form>
+			</div>
+		</div>
+	</header>
+}
+
+templ navLink(href, label string) {
+	if href == "/" {
+		<a href={ templ.SafeURL(href) } class={ templ.Classes(templ.KV("active", req(ctx).Path == "/")) }>{ label }</a>
+	} else {
+		<a href={ templ.SafeURL(href) } class={ templ.Classes(templ.KV("active", strings.HasPrefix(req(ctx).Path, href))) }>{ label }</a>
+	}
+}
+
+templ flash() {
+	if f := req(ctx).Flash; f != nil {
+		<div class={ "flash", "flash-" + f.Kind } role="status">{ f.Message }</div>
+	}
+}
+
+templ csrfField() {
+	<input type="hidden" name="csrf" value={ req(ctx).CSRF }/>
+}
+
+// AuthLayout is a centred card for login and sign-up pages.
+templ AuthLayout(title string) {
+	@Layout(title) {
+		<div class="auth-wrap">
+			<div class="card auth-card">
+				<div class="auth-brand">{ clubName(ctx) }</div>
+				{ children... }
+			</div>
+		</div>
+	}
+}
+
+templ ErrorPage(status int, message string) {
+	@Layout("Error") {
+		<div class="empty-state">
+			<h1>{ itoa(status) }</h1>
+			<p>{ message }</p>
+			<p><a href="/" class="btn">Go home</a></p>
+		</div>
+	}
+}
+
+templ fieldError(errs map[string]string, field string) {
+	if msg, ok := errs[field]; ok {
+		<p class="field-error">{ msg }</p>
+	}
+}
+
+templ multiline(text string) {
+	if text != "" {
+		<div class="prose">{ text }</div>
+	}
+}
+
+templ cover(b *store.Book, size string) {
+	if b.CoverURL != "" {
+		<img class={ "cover", "cover-" + size } src={ b.CoverURL } alt="" loading="lazy" referrerpolicy="no-referrer"/>
+	} else {
+		<div class={ "cover", "cover-" + size, "cover-placeholder" } aria-hidden="true">{ initials(b.Title) }</div>
+	}
+}
+
+templ bookLinks(b *store.Book) {
+	<span class="booklinks">
+		if b.GoodreadsURL != "" {
+			<a href={ templ.URL(b.GoodreadsURL) } target="_blank" rel="noopener noreferrer">Goodreads ↗</a>
+		} else {
+			<a href={ templ.URL(goodreadsSearch(b)) } target="_blank" rel="noopener noreferrer" class="muted">Find on Goodreads ↗</a>
+		}
+	</span>
+}
+
+templ history(items []store.Activity) {
+	<details class="history">
+		<summary>History ({ itoa(len(items)) })</summary>
+		@activityList(items, false)
+	</details>
+}
+
+templ activityList(items []store.Activity, withLinks bool) {
+	if len(items) == 0 {
+		<p class="muted">Nothing yet.</p>
+	} else {
+		<ul class="activity">
+			for _, a := range items {
+				<li>
+					<div>
+						<strong>{ activityUser(a) }</strong>
+						{ " " + a.Summary }
+						if withLinks && a.Action != "delete" {
+							if u := subjectURL(a.SubjectType, a.SubjectID); u != "" {
+								{ " " }
+								<a href={ templ.URL(u) } class="muted">view</a>
+							}
+						}
+					</div>
+					if len(a.Changes) > 0 {
+						<ul class="changes">
+							for _, c := range a.Changes {
+								<li><span class="field">{ c.Field }</span>: <del>{ emptyDash(c.From) }</del> → <ins>{ emptyDash(c.To) }</ins></li>
+							}
+						</ul>
+					}
+					<time datetime={ isoTime(a.CreatedAt) } title={ fmtDateTime(a.CreatedAt) }>{ ago(a.CreatedAt) }</time>
+				</li>
+			}
+		</ul>
+	}
+}
