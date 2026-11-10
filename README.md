@@ -89,7 +89,62 @@ docker build -t bookclub .
 docker run -p 8080:8080 -e DATABASE_URL=postgres://… -e BASE_URL=https://club.example.com bookclub
 ```
 
-It runs anywhere that can run a container and reach PostgreSQL, such as Fly.io, Railway, a VPS or a home server. Put it behind HTTPS and set `BASE_URL` to the public `https://` address, so invite links are correct and cookies are marked Secure. `GET /healthz` reports whether the database is reachable.
+It runs anywhere that can run a container and reach PostgreSQL, such as Fly.io, Railway, a VPS or a home server. Put it behind HTTPS and set `BASE_URL` to the public `https://` address, so invite links are correct and cookies are marked Secure. `GET /healthz` reports whether the database is reachable; `GET /livez` only reports that the app is running.
+
+If the app sits behind a reverse proxy, set `CLIENT_IP_HEADER` to the header the proxy uses for the visitor's address (Fly.io: `Fly-Client-IP`). Without it, the login rate limit sees every visitor as the proxy and 10 failed logins by anyone would lock everyone out. Only set it when the app can't be reached except through that proxy.
+
+## Hosting on Fly.io + Neon
+
+The app runs on [Fly.io](https://fly.io) and the database on [Neon](https://neon.com)'s free plan. Both are set up in the repo: `fly.toml` configures Fly, and `.github/workflows/ci.yml` checks every pull request and deploys every merge to `main`.
+
+Expected cost is a couple of dollars a month for Fly (a small machine that stops when nobody is using the app), nothing for Neon, plus the domain (about $10–11 a year for a `.com`). Fly asks for a payment card when you sign up. Check both pricing pages before you commit, since free plans change.
+
+### How it behaves
+
+- **Idle:** the machine stops when nobody has used the app for a few minutes, and Neon puts the database to sleep. The first visit afterwards takes a few seconds while both wake up.
+- **Deadlines:** a vote whose deadline passes while the app is asleep is closed the moment someone next opens the app, the vote list or the home page. Ballots after the deadline are refused either way, and the fingerprint is recorded when the vote is closed.
+- **One machine only.** Login rate limiting lives in memory, so the deploy runs with `--ha=false`. Don't scale to several machines.
+
+### One-time setup
+
+1. **Database.** In Neon, create a project in the region nearest your Fly region (London `aws-eu-west-2` goes with `lhr`, Frankfurt `aws-eu-central-1` with `fra`). Copy the connection string with **Connection pooling switched off**. The app's migrations use a session-level lock that pooled connections don't support.
+2. **Fly app.** Install [flyctl](https://fly.io/docs/flyctl/install/) and run:
+   ```bash
+   fly auth login
+   fly apps create YOUR-APP-NAME
+   fly secrets set DATABASE_URL='postgresql://…' -a YOUR-APP-NAME
+   ```
+   Then edit `fly.toml`: replace both `YOUR-APP-NAME` placeholders, and set `TIMEZONE` and `primary_region` to suit.
+3. **Deploy token.** Create one that can only deploy this app and add it to GitHub as a repository secret named `FLY_API_TOKEN` (Settings → Secrets and variables → Actions):
+   ```bash
+   fly tokens create deploy -a YOUR-APP-NAME
+   ```
+4. **Protect `main`.** In GitHub (Settings → Branches), require a pull request and require the `test` and `docker-build` checks to pass. Then only merged, passing code gets deployed.
+5. **First deploy.** Commit and push `fly.toml`, or run `fly deploy --remote-only --ha=false` yourself once. From then on, merging to `main` deploys.
+6. **First account.** Run `fly logs -a YOUR-APP-NAME` and open the setup link it prints (see "Running locally"). The link is new each time the app starts, so use the latest one.
+
+Until the `FLY_API_TOKEN` secret exists, the deploy step is skipped and says so, so pushing the repo to GitHub first is safe.
+
+### Your own domain
+
+Buy a domain from a registrar, then:
+
+```bash
+fly certs add club.example.com -a YOUR-APP-NAME
+fly certs show club.example.com -a YOUR-APP-NAME   # shows the DNS records to create
+```
+
+Create those records at your registrar, wait for `fly certs show` to report the certificate as issued, change `BASE_URL` in `fly.toml` to `https://club.example.com`, and merge that change. Invite and reset links use `BASE_URL`.
+
+### Backups
+
+Neon's free plan only keeps a few hours of history, so take your own copies, for instance monthly and before an important vote. You need `pg_dump` (part of the PostgreSQL client tools):
+
+```bash
+pg_dump 'postgresql://…' --format=custom --file=bookclub-$(date +%F).dump
+```
+
+Keep dumps somewhere private. They contain password hashes and everything members have written, so don't publish them, and don't upload them as GitHub Actions artifacts if the repository is public.
 
 ## Layout
 

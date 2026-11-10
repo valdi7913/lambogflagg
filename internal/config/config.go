@@ -16,6 +16,11 @@ type Config struct {
 	BaseURL      string // e.g. https://club.example.com — used to build invite links
 	CookieSecure bool
 	Location     *time.Location
+
+	// ClientIPHeader names a request header that carries the real client IP,
+	// set by a trusted reverse proxy (Fly.io: "Fly-Client-IP"). Leave empty when
+	// the app is reachable directly, otherwise clients could spoof it.
+	ClientIPHeader string
 }
 
 // Load reads configuration. Values already present in the environment win
@@ -27,6 +32,8 @@ func Load() (Config, error) {
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		Addr:        os.Getenv("ADDR"),
 		BaseURL:     strings.TrimRight(os.Getenv("BASE_URL"), "/"),
+
+		ClientIPHeader: strings.TrimSpace(os.Getenv("CLIENT_IP_HEADER")),
 	}
 	if c.DatabaseURL == "" {
 		return c, fmt.Errorf("DATABASE_URL is not set (see .env.example)")

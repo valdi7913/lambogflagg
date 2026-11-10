@@ -14,6 +14,7 @@ import (
 
 func (s *Server) home(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
+	s.closeDuePolls(ctx)
 	var d views.HomeData
 	var err error
 	if d.Upcoming, err = s.st.UpcomingMeetings(ctx, 3); err != nil {

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"bookclub/internal/appctx"
@@ -32,6 +33,7 @@ type Server struct {
 	ol         *openlibrary.Client
 	setupToken string
 	limiter    *loginLimiter
+	lastActive atomic.Int64 // unix nanos of the last visitor request
 
 	clubMu   sync.RWMutex
 	clubName string
@@ -98,11 +100,14 @@ func (s *Server) Handler() http.Handler {
 		fileServer.ServeHTTP(w, r)
 	})))
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
-		b, _ := staticFS.ReadFile("static/favicon.svg")
-		w.Header().Set("Content-Type", "image/svg+xml")
+		b, _ := staticFS.ReadFile("static/favicon.png")
+		w.Header().Set("Content-Type", "image/png")
 		w.Header().Set("Cache-Control", "public, max-age=86400")
 		w.Write(b)
 	})
+	// Liveness only (no database), for the host's health check: checking the
+	// database every few seconds would keep a scale-to-zero database awake.
+	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.st.Pool.Ping(r.Context()); err != nil {
 			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
@@ -191,22 +196,48 @@ func (s *Server) Handler() http.Handler {
 	h = s.csrf(h)
 	h = s.loadSession(h)
 	h = securityHeaders(h)
+	h = s.trackActivity(h)
 	h = logRequests(h)
 	return h
 }
 
+// activeWindow is how long after the last visitor request the background loop
+// keeps working. Outside it the loop does nothing, so an idle app doesn't keep
+// a scale-to-zero database awake. Nothing is missed: a vote past its deadline
+// is also closed when someone opens it, the vote list or the home page, and
+// at startup.
+const activeWindow = 2 * time.Minute
+
+// trackActivity remembers when a visitor last made a request. Health checks
+// and static files don't count.
+func (s *Server) trackActivity(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p := r.URL.Path; p != "/livez" && p != "/healthz" && !strings.HasPrefix(p, "/static/") {
+			s.lastActive.Store(time.Now().UnixNano())
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) recentlyActive() bool {
+	return time.Since(time.Unix(0, s.lastActive.Load())) < activeWindow
+}
+
 // RunBackground closes votes whose deadline has passed and prunes sessions.
+// It runs once at startup, then every 30 seconds while people are using the app.
 func (s *Server) RunBackground(ctx context.Context) {
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
 	lastPrune := time.Time{}
 	for {
-		s.closeDuePolls(ctx)
-		if time.Since(lastPrune) > time.Hour {
-			if err := s.st.DeleteExpiredSessions(ctx); err != nil {
-				slog.Error("prune sessions", "err", err)
+		if lastPrune.IsZero() || s.recentlyActive() {
+			s.closeDuePolls(ctx)
+			if time.Since(lastPrune) > time.Hour {
+				if err := s.st.DeleteExpiredSessions(ctx); err != nil {
+					slog.Error("prune sessions", "err", err)
+				}
+				lastPrune = time.Now()
 			}
-			lastPrune = time.Now()
 		}
 		select {
 		case <-ctx.Done():

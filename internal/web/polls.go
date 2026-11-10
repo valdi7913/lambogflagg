@@ -19,6 +19,7 @@ import (
 )
 
 func (s *Server) listPolls(w http.ResponseWriter, r *http.Request) error {
+	s.closeDuePolls(r.Context())
 	all, err := s.st.ListPolls(r.Context())
 	if err != nil {
 		return err

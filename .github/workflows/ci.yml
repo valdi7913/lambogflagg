@@ -1,0 +1,78 @@
+name: CI and deploy
+
+# Pull requests run the checks. Pushes to main (that is, merges) run the checks
+# and then deploy to Fly.io. See the README ("Hosting on Fly.io + Neon").
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Generated templates are up to date
+        run: |
+          go install github.com/a-h/templ/cmd/templ@"$(go list -m -f '{{.Version}}' github.com/a-h/templ)"
+          templ generate
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Generated *_templ.go files are out of date. Run 'templ generate' and commit the result."
+            git status --short
+            git --no-pager diff --stat
+            exit 1
+          fi
+
+      - name: Formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - run: go vet ./...
+      - run: go test ./...
+
+  # Proves the container image builds without publishing anything.
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t bookclub:ci .
+
+  deploy:
+    # Only after a merge to main, and only once both checks above pass.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, docker-build]
+    runs-on: ubuntu-latest
+    # One deploy at a time; a newer merge waits for the running one to finish.
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - name: Skip if Fly isn't set up yet
+        if: env.FLY_API_TOKEN == ''
+        run: echo "::notice::No FLY_API_TOKEN secret is set, so nothing was deployed. See the README."
+
+      - uses: actions/checkout@v7
+        if: env.FLY_API_TOKEN != ''
+
+      - uses: superfly/flyctl-actions/setup-flyctl@1.5
+        if: env.FLY_API_TOKEN != ''
+
+      # --ha=false keeps a single machine: login rate limiting is kept in memory.
+      - name: Deploy
+        if: env.FLY_API_TOKEN != ''
+        run: flyctl deploy --remote-only --ha=false

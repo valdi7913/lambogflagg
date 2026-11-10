@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,16 +19,39 @@ import (
 var migrationFS embed.FS
 
 // Connect opens a connection pool and verifies the database is reachable.
+//
+// Serverless hosts such as Neon suspend an idle database (closing its
+// connections) and take a moment to wake it, so idle connections are dropped
+// before that happens and the first connection is retried for a while.
 func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
-	pool, err := pgxpool.New(ctx, url)
+	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("parse DATABASE_URL: %w", err)
 	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
+	cfg.MaxConnIdleTime = 3 * time.Minute
+	cfg.HealthCheckPeriod = 30 * time.Second
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
 		return nil, fmt.Errorf("connect to database: %w", err)
 	}
-	return pool, nil
+	deadline := time.Now().Add(45 * time.Second)
+	for attempt := 1; ; attempt++ {
+		pingCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		err = pool.Ping(pingCtx)
+		cancel()
+		if err == nil {
+			return pool, nil
+		}
+		if ctx.Err() != nil || time.Now().After(deadline) {
+			pool.Close()
+			return nil, fmt.Errorf("connect to database: %w", err)
+		}
+		slog.Warn("database not ready, retrying", "attempt", attempt, "err", err)
+		select {
+		case <-ctx.Done():
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // Migrate applies every migration in migrations/ that hasn't been applied yet,
