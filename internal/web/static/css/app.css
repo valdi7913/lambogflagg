@@ -158,6 +158,7 @@ section > .prose, main > .prose { margin-bottom: 1.25rem; }
   color: var(--text); text-decoration: none;
 }
 .brand svg { color: var(--accent); }
+.brand-mark { display: block; width: 30px; height: 30px; border-radius: 7px; }
 .mainnav { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
 .mainnav a, .usermenu a {
   padding: 6px 10px; border-radius: 999px; color: var(--muted); text-decoration: none; font-weight: 500;
@@ -493,6 +494,7 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 .auth-wrap { display: flex; justify-content: center; padding: 6vh 0; }
 .auth-card { width: 100%; max-width: 440px; padding: 32px; }
 .auth-brand { font-family: var(--display); color: var(--accent); font-weight: 700; margin-bottom: 18px; }
+.auth-art { display: none; } /* only the parchment theme shows the illustration */
 
 /* ---- Toast ---- */
 .toast {
@@ -599,6 +601,7 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 }
 [data-theme="parchment"] .brand { color: var(--gold-light); font-size: 1.4rem; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5); }
 [data-theme="parchment"] .brand svg { color: var(--gold-light); }
+[data-theme="parchment"] .brand-mark { border: 1px solid var(--gold); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); }
 [data-theme="parchment"] .mainnav a,
 [data-theme="parchment"] .usermenu a,
 [data-theme="parchment"] .usermenu .linkbtn,
@@ -661,3 +664,13 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 [data-theme="parchment"] .note { background: var(--attn-soft); border-left: 3px solid var(--gold); }
 [data-theme="parchment"] .toast { background: var(--leather); color: var(--gold-light); border: 1px solid var(--gold); }
 [data-theme="parchment"] .auth-card { border: 1px solid var(--gold); }
+/* The lamb painting, framed like a plate in an old book, above the log-in form. */
+[data-theme="parchment"] .auth-art {
+  display: block;
+  width: 150px; aspect-ratio: 314 / 442;
+  margin: 0 auto 22px;
+  background: url("../img/lamgogflagg.png") center / cover no-repeat;
+  border: 3px double var(--gold);
+  border-radius: 75px 75px 4px 4px;
+  box-shadow: 0 0 0 4px var(--surface), 0 0 0 5px var(--leather), 2px 4px 10px rgba(50, 27, 14, 0.4);
+}

@@ -17,7 +17,8 @@ templ Layout(title string) {
 			<meta name="color-scheme" content="light dark"/>
 			<meta name="htmx-config" content={ htmxConfig }/>
 			<title>{ title } · { clubName(ctx) }</title>
-			<link rel="icon" href={ asset("/static/favicon.svg") } type="image/svg+xml"/>
+			<link rel="icon" href={ asset("/static/favicon.png") } type="image/png"/>
+			<link rel="apple-touch-icon" href={ asset("/static/apple-touch-icon.png") }/>
 			<link rel="stylesheet" href={ asset("/static/css/app.css") }/>
 			<script src={ asset("/static/js/htmx.min.js") } defer></script>
 			<script src={ asset("/static/js/app.js") } defer></script>
@@ -42,7 +43,7 @@ templ topbar(u *store.User) {
 	<header class="topbar">
 		<div class="container topbar-inner">
 			<a class="brand" href="/">
-				<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5a1.5 1.5 0 0 0 0 3H20v0H6.5A2.5 2.5 0 0 1 4 19.5v-15Zm2.5-.5a.5.5 0 0 0-.5.5v12.55c.16-.03.33-.05.5-.05H18V4H6.5Z"></path></svg>
+				<img class="brand-mark" src={ asset("/static/favicon.png") } width="30" height="30" alt=""/>
 				<span>{ clubName(ctx) }</span>
 			</a>
 			<nav class="mainnav" aria-label={ t(ctx, "Main") }>
@@ -119,6 +120,7 @@ templ AuthLayout(title string) {
 	@Layout(title) {
 		<div class="auth-wrap">
 			<div class="card auth-card">
+				<div class="auth-art" aria-hidden="true"></div>
 				<div class="auth-head">
 					<div class="auth-brand">{ clubName(ctx) }</div>
 					<div class="auth-switches">

@@ -97,7 +97,7 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	username := formStr(r, "username")
 	next := r.FormValue("next")
-	key := clientIP(r)
+	key := s.clientIP(r)
 	if s.limiter.blocked(key) {
 		return render(w, r, http.StatusTooManyRequests, views.LoginPage(username, next, tr(r, "Too many failed attempts. Wait 15 minutes and try again.")))
 	}

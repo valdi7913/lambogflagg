@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -228,12 +230,20 @@ func (s *Server) baseURL(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-func clientIP(r *http.Request) string {
-	host := r.RemoteAddr
-	if i := strings.LastIndex(host, ":"); i > 0 {
-		host = host[:i]
+// clientIP returns the address of the person making the request, used to
+// rate-limit logins. Behind a reverse proxy every connection comes from the
+// proxy, so when CLIENT_IP_HEADER is configured the address is read from that
+// header instead (only set it for a proxy you trust to overwrite the header).
+func (s *Server) clientIP(r *http.Request) string {
+	if h := s.cfg.ClientIPHeader; h != "" {
+		if ip, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get(h))); err == nil {
+			return ip.String()
+		}
 	}
-	return host
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 // meetingArg names a meeting in a history message.
