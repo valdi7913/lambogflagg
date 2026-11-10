@@ -5,29 +5,31 @@ import (
 	"net/http"
 	"strings"
 
+	"bookclub/internal/i18n"
 	"bookclub/internal/store"
 	"bookclub/internal/views"
 )
 
 const maxCommentLen = 10000
 
-func (s *Server) subjectName(r *http.Request, subjectType string, id int64) string {
+// subjectArg names what a comment is on, for history messages.
+func (s *Server) subjectArg(r *http.Request, subjectType string, id int64) string {
 	ctx := r.Context()
 	switch subjectType {
 	case "book":
 		if b, err := s.st.GetBook(ctx, id); err == nil {
-			return "the book " + quote(b.Title)
+			return i18n.ArgSubject("book", b.Title)
 		}
 	case "meeting":
 		if m, err := s.st.GetMeeting(ctx, id); err == nil {
-			return quote(store.MeetingDisplayName(m, s.cfg.Location))
+			return i18n.ArgSubject("meeting", meetingArg(m))
 		}
 	case "poll":
 		if p, err := s.st.GetPoll(ctx, id); err == nil {
-			return "the vote " + quote(p.Title)
+			return i18n.ArgSubject("poll", p.Title)
 		}
 	}
-	return "something"
+	return "?"
 }
 
 func (s *Server) createComment(w http.ResponseWriter, r *http.Request) error {
@@ -46,7 +48,7 @@ func (s *Server) createComment(w http.ResponseWriter, r *http.Request) error {
 			if err != nil {
 				return err
 			}
-			d.Error = "Write something first (up to 10,000 characters)."
+			d.Error = tr(r, "Write something first (up to 10,000 characters).")
 			return ok(w, r, views.CommentsSection(d))
 		}
 		return redirect(w, r, back)
@@ -56,7 +58,8 @@ func (s *Server) createComment(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.CreateComment(ctx, q, c); err != nil {
 			return err
 		}
-		return s.st.Log(ctx, q, u.ID, "comment", subjectType, subjectID, "commented on "+s.subjectName(r, subjectType, subjectID), nil)
+		return s.st.Log(ctx, q, u.ID, "comment", subjectType, subjectID,
+			store.M("commented on %s", s.subjectArg(r, subjectType, subjectID)), nil)
 	})
 	if err != nil {
 		return err
@@ -138,7 +141,7 @@ func (s *Server) updateComment(w http.ResponseWriter, r *http.Request) error {
 	body := strings.TrimSpace(r.FormValue("body"))
 	if body == "" || len(body) > maxCommentLen {
 		if isHTMX(r) {
-			return ok(w, r, views.CommentEdit(c, "Write something (up to 10,000 characters)."))
+			return ok(w, r, views.CommentEdit(c, tr(r, "Write something (up to 10,000 characters).")))
 		}
 		return redirect(w, r, subjectPath(c.SubjectType, c.SubjectID)+"#comments")
 	}
@@ -168,12 +171,12 @@ func (s *Server) deleteComment(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.DeleteComment(ctx, q, c.ID); err != nil {
 			return err
 		}
-		who := "their own"
+		subject := s.subjectArg(r, c.SubjectType, c.SubjectID)
+		msg := store.M("deleted their own comment on %s", subject)
 		if c.UserID == nil || *c.UserID != u.ID {
-			who = c.UserName + "'s"
+			msg = store.M("deleted a comment by %s on %s", c.UserName, subject)
 		}
-		return s.st.Log(ctx, q, u.ID, "comment", c.SubjectType, c.SubjectID,
-			"deleted "+who+" comment on "+s.subjectName(r, c.SubjectType, c.SubjectID), nil)
+		return s.st.Log(ctx, q, u.ID, "comment", c.SubjectType, c.SubjectID, msg, nil)
 	})
 	if err != nil {
 		return err

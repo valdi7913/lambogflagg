@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"bookclub/internal/i18n"
 	"bookclub/internal/store"
 	"bookclub/internal/views"
 	"bookclub/internal/voting"
@@ -84,18 +85,18 @@ func (s *Server) readPollForm(r *http.Request, p *store.Poll, rulesLocked bool) 
 	p.Description = formStr(r, "description")
 	p.MeetingID = optionalID(formInt64(r, "meeting_id"))
 	if p.Title == "" {
-		errs["title"] = "Give the vote a name."
+		errs["title"] = tr(r, "Give the vote a name.")
 	}
 	if !rulesLocked {
 		p.Method, p.Settings = readRules(r)
 		if !p.Method.Valid() {
-			errs["method"] = "Choose how you want to decide."
+			errs["method"] = tr(r, "Choose how you want to decide.")
 		}
 	}
 	raw := formStr(r, "closes_at")
 	t, err := s.parseLocalTime(raw)
 	if err != nil {
-		errs["closes_at"] = "Enter a valid date and time."
+		errs["closes_at"] = tr(r, "Enter a valid date and time.")
 	}
 	p.ClosesAt = t
 	return raw, errs
@@ -113,7 +114,7 @@ func (s *Server) createPoll(w http.ResponseWriter, r *http.Request) error {
 	}
 	startVoting := r.FormValue("start") == "voting"
 	if p.ClosesAt != nil && !p.ClosesAt.After(timeNow()) {
-		errs["closes_at"] = "Pick a time in the future (or leave it empty)."
+		errs["closes_at"] = tr(r, "Pick a time in the future (or leave it empty).")
 	}
 	if len(errs) > 0 {
 		meetings, _ := s.st.MeetingsForSelect(ctx)
@@ -128,12 +129,12 @@ func (s *Server) createPoll(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return s.st.Log(ctx, q, u.ID, "create", "poll", p.ID,
-			fmt.Sprintf("started the vote %s (%s)", quote(p.Title), strings.ToLower(p.Method.Label())), nil)
+			store.M("started the vote “%s” (%s)", p.Title, i18n.ArgMethod(string(p.Method))), nil)
 	})
 	if err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Vote created. Now add some options.")
+	s.flash(w, r, "ok", "Vote created. Now add some options.")
 	return redirect(w, r, fmt.Sprintf("/polls/%d", p.ID))
 }
 
@@ -174,7 +175,7 @@ func (s *Server) updatePoll(w http.ResponseWriter, r *http.Request) error {
 		edited = &p
 		deadlineChanged := timeStr(old.ClosesAt, s.cfg.Location) != timeStr(p.ClosesAt, s.cfg.Location)
 		if deadlineChanged && p.ClosesAt != nil && !p.ClosesAt.After(timeNow()) && old.Status != store.StatusClosed {
-			formErrs["closes_at"] = "Pick a time in the future (or leave it empty)."
+			formErrs["closes_at"] = tr(r, "Pick a time in the future (or leave it empty).")
 		}
 		if len(formErrs) > 0 {
 			return nil
@@ -185,8 +186,8 @@ func (s *Server) updatePoll(w http.ResponseWriter, r *http.Request) error {
 			{"details", old.Description, p.Description},
 			{"meeting", meetingIDStr(old.MeetingID), meetingIDStr(p.MeetingID)},
 			{"closes", timeStr(old.ClosesAt, loc), timeStr(p.ClosesAt, loc)},
-			{"method", old.Method.Label(), p.Method.Label()},
-			{"rules", strings.Join(old.Settings.Describe(old.Method), " "), strings.Join(p.Settings.Describe(p.Method), " ")},
+			{"method", string(old.Method), string(p.Method)},
+			{"rules", rulesJSON(old), rulesJSON(&p)},
 		})
 		if len(changes) == 0 {
 			return nil
@@ -194,7 +195,7 @@ func (s *Server) updatePoll(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.UpdatePoll(ctx, q, &p); err != nil {
 			return err
 		}
-		return s.st.Log(ctx, q, user(r).ID, "update", "poll", id, "edited the vote "+quote(p.Title), changes)
+		return s.st.Log(ctx, q, user(r).ID, "update", "poll", id, store.M("edited the vote “%s”", p.Title), changes)
 	})
 	if err != nil {
 		return err
@@ -204,8 +205,14 @@ func (s *Server) updatePoll(w http.ResponseWriter, r *http.Request) error {
 		return render(w, r, http.StatusUnprocessableEntity, views.PollFormPage(views.PollFormData{
 			Poll: edited, Meetings: meetings, ClosesAt: formRaw, Locked: edited.BallotCount > 0, Errors: formErrs}))
 	}
-	s.flash(w, "ok", "Saved.")
+	s.flash(w, r, "ok", "Saved.")
 	return redirect(w, r, fmt.Sprintf("/polls/%d", id))
+}
+
+// rulesJSON is a language-neutral record of a vote's rules for the history.
+func rulesJSON(p *store.Poll) string {
+	b, _ := json.Marshal(p.Rules())
+	return string(b)
 }
 
 func meetingIDStr(id *int64) string {
@@ -230,12 +237,12 @@ func (s *Server) deletePoll(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		return s.st.Log(ctx, q, user(r).ID, "delete", "poll", id,
-			fmt.Sprintf("deleted the vote %s (it had %s)", quote(p.Title), pluralize(p.BallotCount, "ballot", "ballots")), nil)
+			store.M("deleted the vote “%s” (it had %s)", p.Title, i18n.ArgBallots(p.BallotCount)), nil)
 	})
 	if err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Vote deleted.")
+	s.flash(w, r, "ok", "Vote deleted.")
 	return redirect(w, r, "/polls")
 }
 
@@ -271,20 +278,13 @@ func (s *Server) duplicatePoll(w http.ResponseWriter, r *http.Request) error {
 		}
 		copyID = cp.ID
 		return s.st.Log(ctx, q, u.ID, "create", "poll", cp.ID,
-			fmt.Sprintf("started %s as a copy of %s", quote(cp.Title), quote(src.Title)), nil)
+			store.M("started “%s” as a copy of “%s”", cp.Title, src.Title), nil)
 	})
 	if err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Copy created with the same options and no ballots. Use Edit to change the name or rules.")
+	s.flash(w, r, "ok", "Copy created with the same options and no ballots. Use Edit to change the name or rules.")
 	return redirect(w, r, fmt.Sprintf("/polls/%d", copyID))
-}
-
-func pluralize(n int, one, many string) string {
-	if n == 1 {
-		return "1 " + one
-	}
-	return strconv.Itoa(n) + " " + many
 }
 
 // ---- Viewing ----
@@ -305,7 +305,7 @@ func (s *Server) showPoll(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
-	d := views.PollData{ViewerID: me.ID, Poll: p, Rules: p.Settings.Describe(p.Method), Voted: map[int64]bool{}}
+	d := views.PollData{ViewerID: me.ID, Poll: p, Voted: map[int64]bool{}}
 	if d.Options, err = s.st.PollOptions(ctx, s.st.Pool, id); err != nil {
 		return err
 	}
@@ -415,25 +415,32 @@ func (s *Server) closePoll(ctx context.Context, q store.Querier, p *store.Poll, 
 		return err
 	}
 	res := tally(p, opts, ballots)
-	summary := fmt.Sprintf("closed voting in %s with %s", quote(p.Title), pluralize(len(ballots), "ballot", "ballots"))
-	if userID == 0 {
-		summary = fmt.Sprintf("closed voting in %s automatically at its deadline, with %s", quote(p.Title), pluralize(len(ballots), "ballot", "ballots"))
-	}
 	var names []string
 	for _, id := range res.Winners {
 		for _, o := range opts {
 			if o.ID == id {
-				names = append(names, quote(o.Name()))
+				names = append(names, o.Name())
 			}
 		}
 	}
-	if len(names) > 0 {
-		summary += "; counted winner: " + strings.Join(names, ", ")
-	} else if len(res.Tied) > 0 {
-		summary += "; the count is tied"
+	title, count, fpShort := p.Title, i18n.ArgBallots(len(ballots)), fp[:12]
+	auto := userID == 0
+	var msg store.Msg
+	switch {
+	case len(names) > 0 && auto:
+		msg = store.M("closed voting in “%s” automatically at its deadline, with %s. Counted winner: %s. Fingerprint %s…", title, count, i18n.ArgList(names), fpShort)
+	case len(names) > 0:
+		msg = store.M("closed voting in “%s” with %s. Counted winner: %s. Fingerprint %s…", title, count, i18n.ArgList(names), fpShort)
+	case len(res.Tied) > 0 && auto:
+		msg = store.M("closed voting in “%s” automatically at its deadline, with %s. The count is tied. Fingerprint %s…", title, count, fpShort)
+	case len(res.Tied) > 0:
+		msg = store.M("closed voting in “%s” with %s. The count is tied. Fingerprint %s…", title, count, fpShort)
+	case auto:
+		msg = store.M("closed voting in “%s” automatically at its deadline, with %s. Fingerprint %s…", title, count, fpShort)
+	default:
+		msg = store.M("closed voting in “%s” with %s. Fingerprint %s…", title, count, fpShort)
 	}
-	summary += ". Fingerprint " + fp[:12] + "…"
-	return s.st.Log(ctx, q, userID, "close", "poll", p.ID, summary, nil)
+	return s.st.Log(ctx, q, userID, "close", "poll", p.ID, msg, nil)
 }
 
 // closeIfDue closes a poll whose deadline has passed. Reports whether it did.
@@ -496,8 +503,8 @@ func (s *Server) setPollStatus(w http.ResponseWriter, r *http.Request) error {
 			if err := s.st.SetPollStatus(ctx, q, id, store.StatusVoting, ""); err != nil {
 				return err
 			}
-			userMsg = "Voting is open."
-			return s.st.Log(ctx, q, u.ID, "status", "poll", id, "opened voting in "+quote(p.Title), nil)
+			userMsg = trKey("Voting is open.")
+			return s.st.Log(ctx, q, u.ID, "status", "poll", id, store.M("opened voting in “%s”", p.Title), nil)
 
 		case target == store.StatusVoting && from == store.StatusClosed && p.Method.HasBallots():
 			if p.ClosesAt != nil && !p.ClosesAt.After(timeNow()) {
@@ -509,39 +516,39 @@ func (s *Server) setPollStatus(w http.ResponseWriter, r *http.Request) error {
 			if err := s.st.SetPollStatus(ctx, q, id, store.StatusVoting, ""); err != nil {
 				return err
 			}
-			userMsg = "Voting reopened."
+			userMsg = trKey("Voting reopened.")
 			return s.st.Log(ctx, q, u.ID, "status", "poll", id,
-				fmt.Sprintf("reopened voting in %s (the fingerprint recorded at closing, %s…, no longer applies)", quote(p.Title), short(p.Fingerprint, 12)), nil)
+				store.M("reopened voting in “%s” (the fingerprint recorded at closing, %s…, no longer applies)", p.Title, short(p.Fingerprint, 12)), nil)
 
 		case target == store.StatusClosed && from == store.StatusVoting:
-			userMsg = "Voting closed. The ballots are published below."
+			userMsg = trKey("Voting closed. The ballots are published below.")
 			return s.closePoll(ctx, q, p, u.ID)
 
 		case target == store.StatusNominating && from == store.StatusVoting && p.BallotCount == 0:
 			if err := s.st.SetPollStatus(ctx, q, id, store.StatusNominating, ""); err != nil {
 				return err
 			}
-			userMsg = "Back to collecting suggestions."
-			return s.st.Log(ctx, q, u.ID, "status", "poll", id, "paused voting in "+quote(p.Title)+" to collect more suggestions", nil)
+			userMsg = trKey("Back to collecting suggestions.")
+			return s.st.Log(ctx, q, u.ID, "status", "poll", id, store.M("paused voting in “%s” to collect more suggestions", p.Title), nil)
 
 		case target == store.StatusNominating && from == store.StatusClosed && !p.Method.HasBallots():
 			if err := s.st.SetPollStatus(ctx, q, id, store.StatusNominating, ""); err != nil {
 				return err
 			}
-			userMsg = "Reopened."
-			return s.st.Log(ctx, q, u.ID, "status", "poll", id, "reopened "+quote(p.Title), nil)
+			userMsg = trKey("Reopened.")
+			return s.st.Log(ctx, q, u.ID, "status", "poll", id, store.M("reopened “%s”", p.Title), nil)
 		}
 		return errStatus(http.StatusConflict, "That change isn't possible right now — someone may have just changed this vote. Reload and try again.")
 	})
 	var he httpError
 	if errors.As(err, &he) && he.status == http.StatusConflict {
-		s.flash(w, "error", he.msg)
+		s.flash(w, r, "error", "%s", errText(r, he))
 		return redirect(w, r, fmt.Sprintf("/polls/%d", id))
 	}
 	if err != nil {
 		return err
 	}
-	s.flash(w, "ok", userMsg)
+	s.flash(w, r, "ok", userMsg)
 	return redirect(w, r, fmt.Sprintf("/polls/%d", id))
 }
 
@@ -575,7 +582,7 @@ func (s *Server) addOption(ctx context.Context, q store.Querier, pollID int64, o
 			return err
 		}
 		if n >= max {
-			return errStatus(http.StatusConflict, fmt.Sprintf("you've already made %s", pluralize(max, "suggestion", "suggestions")))
+			return errStatus(http.StatusConflict, "you've already used all %d of your suggestions", max)
 		}
 	}
 	name := o.Label
@@ -592,7 +599,7 @@ func (s *Server) addOption(ctx context.Context, q store.Querier, pollID int64, o
 		}
 		return err
 	}
-	return s.st.Log(ctx, q, *o.NominatedBy, "update", "poll", pollID, fmt.Sprintf("suggested %s in %s", quote(name), quote(p.Title)), nil)
+	return s.st.Log(ctx, q, *o.NominatedBy, "update", "poll", pollID, store.M("suggested “%s” in “%s”", name, p.Title), nil)
 }
 
 func (s *Server) nominate(w http.ResponseWriter, r *http.Request) error {
@@ -608,19 +615,19 @@ func (s *Server) nominate(w http.ResponseWriter, r *http.Request) error {
 	} else if label := formStr(r, "label"); label != "" {
 		o.Label = label
 	} else {
-		s.flash(w, "error", "Choose a book or type an option.")
+		s.flash(w, r, "error", "Choose a book or type an option.")
 		return redirect(w, r, fmt.Sprintf("/polls/%d#poll-options", id))
 	}
 	err = s.st.Tx(ctx, func(q store.Querier) error { return s.addOption(ctx, q, id, o) })
 	var he httpError
 	if errors.As(err, &he) {
-		s.flash(w, "error", "Couldn't add that: "+he.msg+".")
+		s.flash(w, r, "error", "Couldn't add that: %s.", errText(r, he))
 		return redirect(w, r, fmt.Sprintf("/polls/%d#poll-options", id))
 	}
 	if err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Suggestion added.")
+	s.flash(w, r, "ok", "Suggestion added.")
 	return redirect(w, r, fmt.Sprintf("/polls/%d#poll-options", id))
 }
 
@@ -681,17 +688,17 @@ func (s *Server) removeOption(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.RemoveOption(ctx, q, id, optID); err != nil {
 			return err
 		}
-		return s.st.Log(ctx, q, user(r).ID, "update", "poll", id, fmt.Sprintf("removed %s from %s", quote(target.Name()), quote(p.Title)), nil)
+		return s.st.Log(ctx, q, user(r).ID, "update", "poll", id, store.M("removed “%s” from “%s”", target.Name(), p.Title), nil)
 	})
 	var he httpError
 	if errors.As(err, &he) && he.status == http.StatusConflict {
-		s.flash(w, "error", he.msg)
+		s.flash(w, r, "error", "%s", errText(r, he))
 		return redirect(w, r, fmt.Sprintf("/polls/%d#poll-options", id))
 	}
 	if err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Option removed.")
+	s.flash(w, r, "ok", "Option removed.")
 	return redirect(w, r, fmt.Sprintf("/polls/%d#poll-options", id))
 }
 
@@ -704,7 +711,7 @@ func readBallot(r *http.Request, m voting.Method, opts []*store.PollOption) (vot
 		for _, v := range r.Form["choice"] {
 			id, err := strconv.ParseInt(v, 10, 64)
 			if err != nil {
-				return b, errors.New("invalid choice")
+				return b, voting.Errf("invalid choice")
 			}
 			b.Choices = append(b.Choices, id)
 		}
@@ -717,7 +724,7 @@ func readBallot(r *http.Request, m voting.Method, opts []*store.PollOption) (vot
 			}
 			n, err := strconv.Atoi(v)
 			if err != nil {
-				return b, errors.New("points must be whole numbers")
+				return b, voting.Errf("points must be whole numbers")
 			}
 			b.Points[o.ID] = n
 		}
@@ -735,10 +742,10 @@ func readBallot(r *http.Request, m voting.Method, opts []*store.PollOption) (vot
 			}
 			n, err := strconv.Atoi(v)
 			if err != nil || n < 1 {
-				return b, errors.New("invalid rank")
+				return b, voting.Errf("invalid rank")
 			}
 			if used[n] {
-				return b, fmt.Errorf("two options are both ranked %d — give each a different rank", n)
+				return b, voting.Errf("two options are both ranked %d — give each a different rank", n)
 			}
 			used[n] = true
 			rs = append(rs, ranked{o.ID, n})
@@ -788,11 +795,11 @@ func (s *Server) castBallot(w http.ResponseWriter, r *http.Request) error {
 		}
 		raw, err := readBallot(r, p.Method, opts)
 		if err != nil {
-			return errStatus(http.StatusConflict, "Your ballot wasn't saved: "+err.Error()+".")
+			return errStatus(http.StatusConflict, "Your ballot wasn't saved: %s.", errText(r, err))
 		}
 		clean, err := voting.Clean(p.Method, p.Settings, raw, valid, own)
 		if err != nil {
-			return errStatus(http.StatusConflict, "Your ballot wasn't saved: "+err.Error()+".")
+			return errStatus(http.StatusConflict, "Your ballot wasn't saved: %s.", errText(r, err))
 		}
 		ballots, err := s.st.Ballots(ctx, q, id)
 		if err != nil {
@@ -806,25 +813,25 @@ func (s *Server) castBallot(w http.ResponseWriter, r *http.Request) error {
 		if receipt, err = s.st.UpsertBallot(ctx, q, id, u.ID, clean); err != nil {
 			return err
 		}
-		verb := "voted in "
+		msg := store.M("voted in “%s”", p.Title)
 		if updated {
-			verb = "changed their ballot in "
+			msg = store.M("changed their ballot in “%s”", p.Title)
 		}
-		return s.st.Log(ctx, q, u.ID, "vote", "poll", id, verb+quote(p.Title), nil)
+		return s.st.Log(ctx, q, u.ID, "vote", "poll", id, msg, nil)
 	})
 	var he httpError
 	if errors.As(err, &he) && he.status == http.StatusConflict {
-		s.flash(w, "error", he.msg)
+		s.flash(w, r, "error", "%s", errText(r, he))
 		return redirect(w, r, fmt.Sprintf("/polls/%d#ballot", id))
 	}
 	if err != nil {
 		return err
 	}
-	msg := "Ballot cast. Your receipt code is " + receipt + "."
 	if updated {
-		msg = "Ballot updated. Your receipt code is still " + receipt + "."
+		s.flash(w, r, "ok", "Ballot updated. Your receipt code is still %s.", receipt)
+	} else {
+		s.flash(w, r, "ok", "Ballot cast. Your receipt code is %s.", receipt)
 	}
-	s.flash(w, "ok", msg)
 	return redirect(w, r, fmt.Sprintf("/polls/%d#ballot", id))
 }
 
@@ -846,17 +853,17 @@ func (s *Server) withdrawBallot(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.DeleteBallot(ctx, q, id, u.ID); err != nil {
 			return err
 		}
-		return s.st.Log(ctx, q, u.ID, "vote", "poll", id, "withdrew their ballot from "+quote(p.Title), nil)
+		return s.st.Log(ctx, q, u.ID, "vote", "poll", id, store.M("withdrew their ballot from “%s”", p.Title), nil)
 	})
 	var he httpError
 	if errors.As(err, &he) {
-		s.flash(w, "error", he.msg)
+		s.flash(w, r, "error", "%s", errText(r, he))
 		return redirect(w, r, fmt.Sprintf("/polls/%d", id))
 	}
 	if err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Ballot withdrawn.")
+	s.flash(w, r, "ok", "Ballot withdrawn.")
 	return redirect(w, r, fmt.Sprintf("/polls/%d#ballot", id))
 }
 
@@ -901,18 +908,18 @@ func (s *Server) recordDecision(w http.ResponseWriter, r *http.Request) error {
 				continue
 			}
 			chosen = append(chosen, o.ID)
-			names = append(names, quote(o.Name()))
+			names = append(names, o.Name())
 			if o.BookID == nil {
 				continue
 			}
 			if addToMeeting && p.MeetingID != nil {
-				err := s.st.AddMeetingBook(ctx, q, *p.MeetingID, *o.BookID, "Picked in "+p.Title, u.ID)
+				err := s.st.AddMeetingBook(ctx, q, *p.MeetingID, *o.BookID, trf(r, "Picked in %s", p.Title), u.ID)
 				if err != nil && !errors.Is(err, store.ErrDuplicate) {
 					return err
 				}
 				if err == nil {
 					if err := s.st.Log(ctx, q, u.ID, "update", "meeting", *p.MeetingID,
-						fmt.Sprintf("added %s to the meeting (picked in %s)", quote(o.Name()), quote(p.Title)), nil); err != nil {
+						store.M("added “%s” to the meeting (picked in “%s”)", o.Name(), p.Title), nil); err != nil {
 						return err
 					}
 				}
@@ -931,11 +938,9 @@ func (s *Server) recordDecision(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		summary := "recorded the decision for " + quote(p.Title) + ": "
+		summary := store.M("recorded the decision for “%s”: %s", p.Title, i18n.ArgList(names))
 		if len(names) == 0 {
-			summary += "nothing chosen"
-		} else {
-			summary += strings.Join(names, ", ")
+			summary = store.M("recorded the decision for “%s”: nothing chosen", p.Title)
 		}
 		var changes []store.Change
 		if note != "" {
@@ -945,13 +950,13 @@ func (s *Server) recordDecision(w http.ResponseWriter, r *http.Request) error {
 	})
 	var he httpError
 	if errors.As(err, &he) {
-		s.flash(w, "error", he.msg)
+		s.flash(w, r, "error", "%s", errText(r, he))
 		return redirect(w, r, fmt.Sprintf("/polls/%d", id))
 	}
 	if err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Decision saved.")
+	s.flash(w, r, "ok", "Decision saved.")
 	return redirect(w, r, fmt.Sprintf("/polls/%d#decision", id))
 }
 

@@ -1,11 +1,12 @@
 package views
 
 import "bookclub/internal/store"
+import "bookclub/internal/i18n"
 import "strings"
 
 templ Layout(title string) {
 	<!DOCTYPE html>
-	<html lang="en">
+	<html lang={ string(lang(ctx)) }>
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -16,7 +17,10 @@ templ Layout(title string) {
 			<script src={ asset("/static/js/htmx.min.js") } defer></script>
 			<script src={ asset("/static/js/app.js") } defer></script>
 		</head>
-		<body hx-headers={ csrfHeaders(ctx) }>
+		<body hx-headers={ csrfHeaders(ctx) } data-copied={ t(ctx, "Link copied") }
+			data-error-generic={ t(ctx, "Something went wrong. Reload and try again.") }
+			data-error-offline={ t(ctx, "Couldn't reach the server. Check your connection.") }
+			data-points-left={ t(ctx, "%d left.") } data-points-over={ t(ctx, "%d too many!") }>
 			if u := currentUser(ctx); u != nil {
 				@topbar(u)
 			}
@@ -36,23 +40,33 @@ templ topbar(u *store.User) {
 				<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5a1.5 1.5 0 0 0 0 3H20v0H6.5A2.5 2.5 0 0 1 4 19.5v-15Zm2.5-.5a.5.5 0 0 0-.5.5v12.55c.16-.03.33-.05.5-.05H18V4H6.5Z"></path></svg>
 				<span>{ clubName(ctx) }</span>
 			</a>
-			<nav class="mainnav" aria-label="Main">
-				@navLink("/", "Home")
-				@navLink("/meetings", "Meetings")
-				@navLink("/books", "Books")
-				@navLink("/polls", "Votes")
-				@navLink("/members", "Members")
-				@navLink("/activity", "History")
+			<nav class="mainnav" aria-label={ t(ctx, "Main") }>
+				@navLink("/", t(ctx, "Home"))
+				@navLink("/meetings", t(ctx, "Meetings"))
+				@navLink("/books", t(ctx, "Books"))
+				@navLink("/polls", t(ctx, "Votes"))
+				@navLink("/members", t(ctx, "Members"))
+				@navLink("/activity", t(ctx, "History"))
 			</nav>
 			<div class="usermenu">
+				@langSwitch()
 				<a href="/me" class={ templ.Classes(templ.KV("active", req(ctx).Path == "/me")) }>{ u.DisplayName }</a>
 				<form method="post" action="/logout" class="inline">
 					@csrfField()
-					<button type="submit" class="linkbtn">Log out</button>
+					<button type="submit" class="linkbtn">{ t(ctx, "Log out") }</button>
 				</form>
 			</div>
 		</div>
 	</header>
+}
+
+// langSwitch offers the other language, written in that language.
+templ langSwitch() {
+	if lang(ctx) == i18n.IS {
+		<a href={ langURL(ctx, i18n.EN) } hreflang="en" lang="en" class="langswitch" title="Switch to English">English</a>
+	} else {
+		<a href={ langURL(ctx, i18n.IS) } hreflang="is" lang="is" class="langswitch" title="Skipta yfir á íslensku">Íslenska</a>
+	}
 }
 
 templ navLink(href, label string) {
@@ -78,7 +92,10 @@ templ AuthLayout(title string) {
 	@Layout(title) {
 		<div class="auth-wrap">
 			<div class="card auth-card">
-				<div class="auth-brand">{ clubName(ctx) }</div>
+				<div class="auth-head">
+					<div class="auth-brand">{ clubName(ctx) }</div>
+					@langSwitch()
+				</div>
 				{ children... }
 			</div>
 		</div>
@@ -86,11 +103,11 @@ templ AuthLayout(title string) {
 }
 
 templ ErrorPage(status int, message string) {
-	@Layout("Error") {
+	@Layout(t(ctx, "Error")) {
 		<div class="empty-state">
 			<h1>{ itoa(status) }</h1>
 			<p>{ message }</p>
-			<p><a href="/" class="btn">Go home</a></p>
+			<p><a href="/" class="btn">{ t(ctx, "Go home") }</a></p>
 		</div>
 	}
 }
@@ -120,43 +137,43 @@ templ bookLinks(b *store.Book) {
 		if b.GoodreadsURL != "" {
 			<a href={ templ.URL(b.GoodreadsURL) } target="_blank" rel="noopener noreferrer">Goodreads ↗</a>
 		} else {
-			<a href={ templ.URL(goodreadsSearch(b)) } target="_blank" rel="noopener noreferrer" class="muted">Find on Goodreads ↗</a>
+			<a href={ templ.URL(goodreadsSearch(b)) } target="_blank" rel="noopener noreferrer" class="muted">{ t(ctx, "Find on Goodreads ↗") }</a>
 		}
 	</span>
 }
 
 templ history(items []store.Activity) {
 	<details class="history">
-		<summary>History ({ itoa(len(items)) })</summary>
+		<summary>{ tf(ctx, "History (%d)", len(items)) }</summary>
 		@activityList(items, false)
 	</details>
 }
 
 templ activityList(items []store.Activity, withLinks bool) {
 	if len(items) == 0 {
-		<p class="muted">Nothing yet.</p>
+		<p class="muted">{ t(ctx, "Nothing yet.") }</p>
 	} else {
 		<ul class="activity">
 			for _, a := range items {
 				<li>
 					<div>
-						<strong>{ activityUser(a) }</strong>
-						{ " " + a.Summary }
+						<strong>{ activityUser(ctx, a) }</strong>
+						{ " " + activitySummary(ctx, a) }
 						if withLinks && a.Action != "delete" {
 							if u := subjectURL(a.SubjectType, a.SubjectID); u != "" {
 								{ " " }
-								<a href={ templ.URL(u) } class="muted">view</a>
+								<a href={ templ.URL(u) } class="muted">{ t(ctx, "view") }</a>
 							}
 						}
 					</div>
 					if len(a.Changes) > 0 {
 						<ul class="changes">
 							for _, c := range a.Changes {
-								<li><span class="field">{ c.Field }</span>: <del>{ emptyDash(c.From) }</del> → <ins>{ emptyDash(c.To) }</ins></li>
+								<li><span class="field">{ fieldLabel(ctx, c.Field) }</span>: <del>{ fieldValue(ctx, c.Field, c.From) }</del> → <ins>{ fieldValue(ctx, c.Field, c.To) }</ins></li>
 							}
 						</ul>
 					}
-					<time datetime={ isoTime(a.CreatedAt) } title={ fmtDateTime(a.CreatedAt) }>{ ago(a.CreatedAt) }</time>
+					<time datetime={ isoTime(a.CreatedAt) } title={ fmtDateTime(ctx, a.CreatedAt) }>{ ago(ctx, a.CreatedAt) }</time>
 				</li>
 			}
 		</ul>

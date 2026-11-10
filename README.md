@@ -15,6 +15,16 @@ The app records what your club does; it doesn't make you run the club a certain 
 - **Duplicate a vote** to run a runoff or try different rules with the same options.
 - **Everyone is equal.** Any member can add or edit books, meetings and votes. Every change goes into a history log that shows who changed what. Admins can only deactivate accounts and grant admin rights.
 
+## Languages
+
+The app is in English and Icelandic.
+
+- **Picking a language:** each person chooses with the *Íslenska / English* switch in the top bar, or on their account page. The choice is remembered on that device. Before someone chooses, the browser's language decides.
+- **History:** entries are stored as message keys, so they show in each reader's language.
+- **Adding phrases:**
+  - English text is the key, wrapped in `t(ctx, "…")` in templates and `tr(r, "…")` or `s.flash(…)` in handlers.
+  - Translations live in `internal/i18n/is.go`. `go test ./internal/i18n` fails if any phrase is missing or a translation's `%s`/`%d` placeholders don't match.
+
 ## Making votes trustworthy
 
 - **Rules lock** once the first ballot is cast. Options that are on someone's ballot can't be removed.

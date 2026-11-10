@@ -4,20 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	neturl "net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/a-h/templ"
 
 	"bookclub/internal/appctx"
+	"bookclub/internal/i18n"
 	"bookclub/internal/openlibrary"
 	"bookclub/internal/store"
 	"bookclub/internal/voting"
 )
-
-// Loc is the club's time zone, set at startup.
-var Loc = time.Local
 
 // AssetVersion is appended to static asset URLs for cache busting.
 var AssetVersion = "1"
@@ -25,9 +23,9 @@ var AssetVersion = "1"
 // allowEval is off so htmx never needs 'unsafe-eval' under our CSP.
 const htmxConfig = `{"includeIndicatorStyles":false,"historyCacheSize":0,"allowEval":false}`
 
-func req(ctx context.Context) *appctx.Request   { return appctx.Get(ctx) }
+func req(ctx context.Context) *appctx.Request     { return appctx.Get(ctx) }
 func currentUser(ctx context.Context) *store.User { return appctx.Get(ctx).User }
-func clubName(ctx context.Context) string        { return appctx.Get(ctx).ClubName }
+func clubName(ctx context.Context) string         { return appctx.Get(ctx).ClubName }
 
 func myID(ctx context.Context) int64 {
 	if u := currentUser(ctx); u != nil {
@@ -49,72 +47,50 @@ func asset(path string) string { return path + "?v=" + AssetVersion }
 
 func itoa[T ~int | ~int64](n T) string { return strconv.FormatInt(int64(n), 10) }
 
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return "1 " + one
-	}
-	return strconv.Itoa(n) + " " + many
-}
-
 func url(format string, args ...any) templ.SafeURL {
 	return templ.SafeURL(fmt.Sprintf(format, args...))
 }
 
 func path(format string, args ...any) string { return fmt.Sprintf(format, args...) }
 
+// ---- Translation ----
+
+func lang(ctx context.Context) i18n.Lang { return appctx.Get(ctx).Lang }
+
+// t translates a phrase into the reader's language.
+func t(ctx context.Context, key string) string { return i18n.T(lang(ctx), key) }
+
+// tf translates a format string and fills it in.
+func tf(ctx context.Context, key string, args ...any) string { return i18n.Tf(lang(ctx), key, args...) }
+
+// tn picks singular/plural; both forms contain %d.
+func tn(ctx context.Context, n int, one, many string) string { return i18n.N(lang(ctx), n, one, many) }
+
+func q(ctx context.Context, s string) string { return i18n.Quote(lang(ctx), s) }
+
+// langURL switches language and comes back to the current page.
+func langURL(ctx context.Context, l i18n.Lang) templ.SafeURL {
+	next := req(ctx).URI
+	if next == "" {
+		next = "/"
+	}
+	return templ.SafeURL("/lang/" + string(l) + "?next=" + neturl.QueryEscape(next))
+}
+
 // ---- Time formatting ----
 
-func fmtDate(t time.Time) string     { return t.In(Loc).Format("Mon 2 Jan 2006") }
-func fmtDateTime(t time.Time) string { return t.In(Loc).Format("Mon 2 Jan 2006, 15:04") }
-func isoTime(t time.Time) string     { return t.UTC().Format(time.RFC3339) }
-
-func fmtMeetingTime(t *time.Time) string {
-	if t == nil {
-		return "Date to be decided"
-	}
-	lt := t.In(Loc)
-	if lt.Hour() == 0 && lt.Minute() == 0 {
-		return lt.Format("Monday 2 January 2006")
-	}
-	return lt.Format("Monday 2 January 2006, 15:04")
+func fmtDate(ctx context.Context, t time.Time) string         { return i18n.Date(lang(ctx), t) }
+func fmtDateTime(ctx context.Context, t time.Time) string     { return i18n.DateTime(lang(ctx), t) }
+func fmtMeetingTime(ctx context.Context, t *time.Time) string { return i18n.MeetingTime(lang(ctx), t) }
+func ago(ctx context.Context, t time.Time) string             { return i18n.Ago(lang(ctx), t) }
+func until(ctx context.Context, t time.Time) string           { return i18n.Until(lang(ctx), t) }
+func ordinal(ctx context.Context, n int) string               { return i18n.Ordinal(lang(ctx), n) }
+func isoTime(t time.Time) string                              { return t.UTC().Format(time.RFC3339) }
+func methodLabel(ctx context.Context, m voting.Method) string {
+	return i18n.MethodLabel(lang(ctx), string(m))
 }
-
-func ago(t time.Time) string {
-	d := time.Since(t)
-	switch {
-	case d < 0:
-		return fmtDateTime(t)
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return plural(int(d.Minutes()), "minute", "minutes") + " ago"
-	case d < 24*time.Hour:
-		return plural(int(d.Hours()), "hour", "hours") + " ago"
-	case d < 7*24*time.Hour:
-		return plural(int(d.Hours()/24), "day", "days") + " ago"
-	}
-	return fmtDate(t)
-}
-
-func until(t time.Time) string {
-	d := time.Until(t)
-	switch {
-	case d <= 0:
-		return "now"
-	case d < time.Hour:
-		return "in " + plural(int(d.Minutes())+1, "minute", "minutes")
-	case d < 48*time.Hour:
-		return "in " + plural(int(d.Hours()+0.5), "hour", "hours")
-	}
-	return "in " + plural(int(d.Hours()/24+0.5), "day", "days")
-}
-
-// unit returns "1 vote" style singular units for result tables.
-func unit(value int, u string) string {
-	if value == 1 {
-		return strings.TrimSuffix(u, "s")
-	}
-	return u
+func meetingName(ctx context.Context, m *store.Meeting) string {
+	return i18n.MeetingName(lang(ctx), m.Title, m.StartsAt)
 }
 
 // InputDateTime formats a time for <input type="datetime-local">.
@@ -122,34 +98,32 @@ func InputDateTime(t *time.Time) string {
 	if t == nil {
 		return ""
 	}
-	return t.In(Loc).Format("2006-01-02T15:04")
+	return t.In(i18n.Loc).Format("2006-01-02T15:04")
 }
 
 // ---- Domain helpers ----
 
-func meetingName(m *store.Meeting) string { return store.MeetingDisplayName(m, Loc) }
-
-func pollMeetingName(p *store.Poll) string {
+func pollMeetingName(ctx context.Context, p *store.Poll) string {
 	if p.MeetingID == nil {
 		return ""
 	}
-	return store.MeetingDisplayName(&store.Meeting{Title: p.MeetingTitle, StartsAt: p.MeetingStartsAt}, Loc)
+	return i18n.MeetingName(lang(ctx), p.MeetingTitle, p.MeetingStartsAt)
 }
 
-func statusLabel(p *store.Poll) string {
+func statusLabel(ctx context.Context, p *store.Poll) string {
 	switch p.Status {
 	case store.StatusNominating:
 		if p.Method == voting.Informal {
-			return "Open"
+			return t(ctx, "Open")
 		}
-		return "Collecting suggestions"
+		return t(ctx, "Collecting suggestions")
 	case store.StatusVoting:
-		return "Voting open"
+		return t(ctx, "Voting open")
 	case store.StatusClosed:
 		if p.Method == voting.Informal {
-			return "Decided"
+			return t(ctx, "Decided")
 		}
-		return "Closed"
+		return t(ctx, "Closed")
 	}
 	return p.Status
 }
@@ -164,27 +138,32 @@ func yearStr(y *int) string {
 }
 
 func bookByline(b *store.Book) string {
-	parts := []string{}
-	if b.Authors != "" {
-		parts = append(parts, b.Authors)
+	switch {
+	case b.Authors != "" && b.Year != nil:
+		return b.Authors + " · " + strconv.Itoa(*b.Year)
+	case b.Year != nil:
+		return strconv.Itoa(*b.Year)
 	}
-	if b.Year != nil {
-		parts = append(parts, strconv.Itoa(*b.Year))
-	}
-	return strings.Join(parts, " · ")
+	return b.Authors
 }
 
 func initials(title string) string {
-	words := strings.Fields(title)
 	out := ""
-	for _, w := range words {
-		r := []rune(w)
-		if len(r) > 0 {
-			out += strings.ToUpper(string(r[0]))
+	n := 0
+	inWord := false
+	for _, r := range title {
+		if r == ' ' || r == '\t' {
+			inWord = false
+			continue
 		}
-		if len([]rune(out)) == 2 {
-			break
+		if !inWord {
+			out += string(r)
+			n++
+			if n == 2 {
+				break
+			}
 		}
+		inWord = true
 	}
 	return out
 }
@@ -203,27 +182,20 @@ func subjectURL(subjectType string, id int64) string {
 	return ""
 }
 
-func short(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
-}
-
 func methodOptions() []voting.Method { return voting.Methods }
 
-func methodHint(m voting.Method) string {
+func methodHint(ctx context.Context, m voting.Method) string {
 	switch m {
 	case voting.Single:
-		return "Everyone picks one favourite."
+		return t(ctx, "Everyone picks one favourite.")
 	case voting.Multi:
-		return "Vote for several (or all you like)."
+		return t(ctx, "Vote for several (or all you like).")
 	case voting.Points:
-		return "Spread a budget of points."
+		return t(ctx, "Spread a budget of points.")
 	case voting.Ranked:
-		return "Rank in order of preference."
+		return t(ctx, "Rank in order of preference.")
 	case voting.Informal:
-		return "No ballots — just record what you decided."
+		return t(ctx, "No ballots — just record what you decided.")
 	}
 	return ""
 }
@@ -277,20 +249,6 @@ func seq(n int) []int {
 	return out
 }
 
-func ordinal(n int) string {
-	suffix := "th"
-	switch {
-	case n%100 >= 11 && n%100 <= 13:
-	case n%10 == 1:
-		suffix = "st"
-	case n%10 == 2:
-		suffix = "nd"
-	case n%10 == 3:
-		suffix = "rd"
-	}
-	return strconv.Itoa(n) + suffix
-}
-
 func maxValue(ts []voting.Total) int {
 	m := 0
 	for _, t := range ts {
@@ -301,16 +259,98 @@ func maxValue(ts []voting.Total) int {
 	return m
 }
 
+// unitCount is "3 votes" / "1 point" in the reader's language.
+func unitCount(ctx context.Context, n int, unit string) string {
+	if unit == "points" {
+		return tn(ctx, n, "%d point", "%d points")
+	}
+	return tn(ctx, n, "%d vote", "%d votes")
+}
+
 func goodreadsSearch(b *store.Book) string { return openlibrary.GoodreadsSearchURL(b.Title, b.Authors) }
 
-func activityUser(a store.Activity) string {
+func activityUser(ctx context.Context, a store.Activity) string {
 	if a.UserID == nil {
-		return "System"
+		return t(ctx, "System")
 	}
 	if a.UserName == "" {
-		return "Former member"
+		return t(ctx, "Former member")
 	}
 	return a.UserName
+}
+
+func activitySummary(ctx context.Context, a store.Activity) string {
+	if a.MsgKey == "" {
+		return a.Summary
+	}
+	return i18n.RenderMsg(lang(ctx), a.MsgKey, a.MsgArgs)
+}
+
+// fieldLabel names an edited field in the history.
+func fieldLabel(ctx context.Context, field string) string {
+	switch field {
+	case "title":
+		return t(ctx, "title")
+	case "authors":
+		return t(ctx, "authors")
+	case "year":
+		return t(ctx, "year")
+	case "Goodreads link":
+		return t(ctx, "Goodreads link")
+	case "cover":
+		return t(ctx, "cover")
+	case "notes":
+		return t(ctx, "notes")
+	case "on want-to-read list":
+		return t(ctx, "on want-to-read list")
+	case "date":
+		return t(ctx, "date")
+	case "place":
+		return t(ctx, "place")
+	case "description":
+		return t(ctx, "description")
+	case "details":
+		return t(ctx, "details")
+	case "meeting":
+		return t(ctx, "meeting")
+	case "closes":
+		return t(ctx, "closes")
+	case "method":
+		return t(ctx, "method")
+	case "rules":
+		return t(ctx, "rules")
+	case "name":
+		return t(ctx, "name")
+	case "note":
+		return t(ctx, "note")
+	}
+	return field
+}
+
+// fieldValue shows an edited value; a few stored codes are translated.
+func fieldValue(ctx context.Context, field, value string) string {
+	if value == "" {
+		return "—"
+	}
+	switch field {
+	case "on want-to-read list":
+		if value == "yes" {
+			return t(ctx, "yes")
+		}
+		return t(ctx, "no")
+	case "method":
+		if voting.Method(value).Valid() {
+			return methodLabel(ctx, voting.Method(value))
+		}
+	}
+	return value
+}
+
+func commentAuthor(ctx context.Context, c *store.Comment) string {
+	if c.UserName == "" {
+		return t(ctx, "Former member")
+	}
+	return c.UserName
 }
 
 func emptyDash(s string) string {

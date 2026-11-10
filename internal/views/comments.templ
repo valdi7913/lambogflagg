@@ -12,9 +12,9 @@ type CommentsData struct {
 
 templ CommentsSection(d CommentsData) {
 	<section class="card comments" id="comments">
-		<h2>Comments ({ itoa(len(d.Comments)) })</h2>
+		<h2>{ tf(ctx, "Comments (%d)", len(d.Comments)) }</h2>
 		if len(d.Comments) == 0 {
-			<p class="muted">No comments yet.</p>
+			<p class="muted">{ t(ctx, "No comments yet.") }</p>
 		} else {
 			<ul class="comment-list">
 				for _, c := range d.Comments {
@@ -26,12 +26,12 @@ templ CommentsSection(d CommentsData) {
 			@csrfField()
 			<input type="hidden" name="subject_type" value={ d.SubjectType }/>
 			<input type="hidden" name="subject_id" value={ itoa(d.SubjectID) }/>
-			<label class="sr-only" for={ "comment-body-" + d.SubjectType }>Add a comment</label>
-			<textarea id={ "comment-body-" + d.SubjectType } name="body" rows="3" maxlength="10000" required placeholder="Add a comment…"></textarea>
+			<label class="sr-only" for={ "comment-body-" + d.SubjectType }>{ t(ctx, "Add a comment") }</label>
+			<textarea id={ "comment-body-" + d.SubjectType } name="body" rows="3" maxlength="10000" required placeholder={ t(ctx, "Add a comment…") }></textarea>
 			if d.Error != "" {
 				<p class="field-error">{ d.Error }</p>
 			}
-			<div><button type="submit" class="btn btn-small btn-primary">Post comment</button></div>
+			<div><button type="submit" class="btn btn-small btn-primary">{ t(ctx, "Post comment") }</button></div>
 		</form>
 	</section>
 }
@@ -39,10 +39,10 @@ templ CommentsSection(d CommentsData) {
 templ CommentItem(c *store.Comment) {
 	<li class="comment" id={ "comment-" + itoa(c.ID) }>
 		<div class="comment-meta">
-			<strong>{ c.UserName }</strong>
-			<time datetime={ isoTime(c.CreatedAt) } title={ fmtDateTime(c.CreatedAt) }>{ ago(c.CreatedAt) }</time>
+			<strong>{ commentAuthor(ctx, c) }</strong>
+			<time datetime={ isoTime(c.CreatedAt) } title={ fmtDateTime(ctx, c.CreatedAt) }>{ ago(ctx, c.CreatedAt) }</time>
 			if c.EditedAt != nil {
-				<span class="muted small" title={ fmtDateTime(*c.EditedAt) }>(edited)</span>
+				<span class="muted small" title={ fmtDateTime(ctx, *c.EditedAt) }>{ t(ctx, "(edited)") }</span>
 			}
 		</div>
 		<div class="prose">{ c.Body }</div>
@@ -50,13 +50,13 @@ templ CommentItem(c *store.Comment) {
 			<div class="comment-actions">
 				if isMe(ctx, c.UserID) {
 					<button type="button" class="linkbtn small" hx-get={ path("/comments/%d/edit", c.ID) }
-						hx-target={ "#comment-" + itoa(c.ID) } hx-swap="outerHTML">Edit</button>
+						hx-target={ "#comment-" + itoa(c.ID) } hx-swap="outerHTML">{ t(ctx, "Edit") }</button>
 				}
 				<form method="post" action={ url("/comments/%d/delete", c.ID) } class="inline"
 					hx-post={ path("/comments/%d/delete", c.ID) } hx-target={ "#comment-" + itoa(c.ID) } hx-swap="outerHTML"
-					hx-confirm="Delete this comment?">
+					hx-confirm={ t(ctx, "Delete this comment?") }>
 					@csrfField()
-					<button type="submit" class="linkbtn small">Delete</button>
+					<button type="submit" class="linkbtn small">{ t(ctx, "Delete") }</button>
 				</form>
 			</div>
 		}
@@ -73,16 +73,16 @@ templ CommentEdit(c *store.Comment, errMsg string) {
 				<p class="field-error">{ errMsg }</p>
 			}
 			<div class="actions">
-				<button type="submit" class="btn btn-small btn-primary">Save</button>
+				<button type="submit" class="btn btn-small btn-primary">{ t(ctx, "Save") }</button>
 				<button type="button" class="btn btn-small btn-ghost" hx-get={ path("/comments/%d", c.ID) }
-					hx-target={ "#comment-" + itoa(c.ID) } hx-swap="outerHTML">Cancel</button>
+					hx-target={ "#comment-" + itoa(c.ID) } hx-swap="outerHTML">{ t(ctx, "Cancel") }</button>
 			</div>
 		</form>
 	</li>
 }
 
 templ CommentDeleted() {
-	<li class="comment muted small">Comment deleted.</li>
+	<li class="comment muted small">{ t(ctx, "Comment deleted.") }</li>
 }
 
 func canEditComment(ctx context.Context, c *store.Comment) bool {

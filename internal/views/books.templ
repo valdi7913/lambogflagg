@@ -2,6 +2,7 @@ package views
 
 import "bookclub/internal/store"
 import "bookclub/internal/openlibrary"
+import "context"
 
 type BooksData struct {
 	Filter string
@@ -10,34 +11,34 @@ type BooksData struct {
 }
 
 templ BooksPage(d BooksData) {
-	@Layout("Books") {
+	@Layout(t(ctx, "Books")) {
 		<div class="page-head">
-			<h1>Books</h1>
+			<h1>{ t(ctx, "Books") }</h1>
 			<div class="actions">
-				<a class="btn btn-primary" href="/books/new">Add a book</a>
+				<a class="btn btn-primary" href="/books/new">{ t(ctx, "Add a book") }</a>
 			</div>
 		</div>
 		<div class="toolbar">
-			<nav class="tabs" aria-label="Filter">
-				<a href="/books?filter=wishlist" class={ templ.Classes(templ.KV("active", d.Filter == "wishlist")) }>Want to read</a>
-				<a href="/books?filter=read" class={ templ.Classes(templ.KV("active", d.Filter == "read")) }>Club reads</a>
-				<a href="/books?filter=all" class={ templ.Classes(templ.KV("active", d.Filter == "all")) }>All</a>
+			<nav class="tabs" aria-label={ t(ctx, "Filter") }>
+				<a href="/books?filter=wishlist" class={ templ.Classes(templ.KV("active", d.Filter == "wishlist")) }>{ t(ctx, "Want to read") }</a>
+				<a href="/books?filter=read" class={ templ.Classes(templ.KV("active", d.Filter == "read")) }>{ t(ctx, "Club reads") }</a>
+				<a href="/books?filter=all" class={ templ.Classes(templ.KV("active", d.Filter == "all")) }>{ t(ctx, "All") }</a>
 			</nav>
 			<form method="get" action="/books" class="search-form">
 				<input type="hidden" name="filter" value={ d.Filter }/>
-				<input type="search" name="q" value={ d.Query } placeholder="Search title or author" aria-label="Search books"/>
+				<input type="search" name="q" value={ d.Query } placeholder={ t(ctx, "Search title or author") } aria-label={ t(ctx, "Search books") }/>
 			</form>
 		</div>
 		if len(d.Books) == 0 {
 			<div class="card empty">
 				if d.Query != "" {
-					<p>No books match “{ d.Query }”.</p>
+					<p>{ tf(ctx, "No books match %s.", q(ctx, d.Query)) }</p>
 				} else if d.Filter == "wishlist" {
-					<p>The want-to-read list is empty. <a href="/books/new">Add a book</a> you'd like the club to read.</p>
+					<p>{ t(ctx, "The want-to-read list is empty.") } <a href="/books/new">{ t(ctx, "Add a book") }</a> { t(ctx, "you'd like the club to read.") }</p>
 				} else if d.Filter == "read" {
-					<p>No books have been attached to a meeting yet.</p>
+					<p>{ t(ctx, "No books have been attached to a meeting yet.") }</p>
 				} else {
-					<p>No books yet. <a href="/books/new">Add the first one</a>.</p>
+					<p>{ t(ctx, "No books yet.") } <a href="/books/new">{ t(ctx, "Add the first one") }</a>.</p>
 				}
 			</div>
 		} else {
@@ -50,10 +51,10 @@ templ BooksPage(d BooksData) {
 							<span class="book-tile-author">{ b.Authors }</span>
 							<span class="book-tile-tags">
 								if b.OnWishlist {
-									<span class="tag">Want to read</span>
+									<span class="tag">{ t(ctx, "Want to read") }</span>
 								}
 								if b.MeetingCount > 0 {
-									<span class="tag tag-read">Club read</span>
+									<span class="tag tag-read">{ t(ctx, "Club read") }</span>
 								}
 							</span>
 						</a>
@@ -80,7 +81,7 @@ templ BookPage(d BookData) {
 				@cover(d.Book, "l")
 			</div>
 			<div class="book-detail-body">
-				<p class="crumbs"><a href="/books">Books</a></p>
+				<p class="crumbs"><a href="/books">{ t(ctx, "Books") }</a></p>
 				<h1>{ d.Book.Title }</h1>
 				<p class="lead">{ bookByline(d.Book) }</p>
 				<p class="booklink-row">
@@ -92,18 +93,18 @@ templ BookPage(d BookData) {
 				@WishlistToggle(d.Book)
 				@multiline(d.Book.Notes)
 				<p class="muted small">
-					Added
 					if d.Book.AddedByName != "" {
-						{ " by " + d.Book.AddedByName }
+						{ tf(ctx, "Added by %s · %s", d.Book.AddedByName, fmtDate(ctx, d.Book.CreatedAt)) }
+					} else {
+						{ tf(ctx, "Added %s", fmtDate(ctx, d.Book.CreatedAt)) }
 					}
-					{ " · " + fmtDate(d.Book.CreatedAt) }
 				</p>
 				<div class="actions">
-					<a class="btn btn-small" href={ url("/books/%d/edit", d.Book.ID) }>Edit</a>
+					<a class="btn btn-small" href={ url("/books/%d/edit", d.Book.ID) }>{ t(ctx, "Edit") }</a>
 					if d.CanDelete {
-						<form method="post" action={ url("/books/%d/delete", d.Book.ID) } class="inline" data-confirm="Delete this book from the library?">
+						<form method="post" action={ url("/books/%d/delete", d.Book.ID) } class="inline" data-confirm={ t(ctx, "Delete this book from the library?") }>
 							@csrfField()
-							<button type="submit" class="btn btn-small btn-danger">Delete</button>
+							<button type="submit" class="btn btn-small btn-danger">{ t(ctx, "Delete") }</button>
 						</form>
 					}
 				</div>
@@ -111,36 +112,37 @@ templ BookPage(d BookData) {
 		</div>
 		<div class="grid-2">
 			<section class="card">
-				<h2>Meetings</h2>
+				<h2>{ t(ctx, "Meetings") }</h2>
 				if len(d.Meetings) == 0 {
-					<p class="muted">Not part of any meeting yet.</p>
+					<p class="muted">{ t(ctx, "Not part of any meeting yet.") }</p>
 				} else {
 					<ul class="plain-list">
 						for _, m := range d.Meetings {
-							<li><a href={ url("/meetings/%d", m.ID) }>{ meetingName(m) }</a> <span class="muted small">{ fmtMeetingTime(m.StartsAt) }</span></li>
+							<li><a href={ url("/meetings/%d", m.ID) }>{ meetingName(ctx, m) }</a> <span class="muted small">{ fmtMeetingTime(ctx, m.StartsAt) }</span></li>
 						}
 					</ul>
 				}
 			</section>
 			<section class="card">
-				<h2>Votes</h2>
+				<h2>{ t(ctx, "Votes") }</h2>
 				if len(d.Nominations) == 0 {
-					<p class="muted">Hasn't been suggested in a vote yet.</p>
+					<p class="muted">{ t(ctx, "Hasn't been suggested in a vote yet.") }</p>
 				} else {
 					<ul class="plain-list">
 						for _, n := range d.Nominations {
 							<li>
 								<a href={ url("/polls/%d", n.PollID) }>{ n.PollTitle }</a>
 								if n.Chosen {
-									<span class="badge badge-ok">Chosen</span>
+									<span class="badge badge-ok">{ t(ctx, "Chosen") }</span>
 								}
 								<div class="muted small">
-									Suggested
 									if n.NominatedByName != "" {
-										{ " by " + n.NominatedByName }
+										{ tf(ctx, "Suggested by %s", n.NominatedByName) }
+									} else {
+										{ t(ctx, "Suggested") }
 									}
 									if n.Pitch != "" {
-										{ ": “" + n.Pitch + "”" }
+										{ ": " + q(ctx, n.Pitch) }
 									}
 								</div>
 							</li>
@@ -160,12 +162,12 @@ templ WishlistToggle(b *store.Book) {
 		@csrfField()
 		if b.OnWishlist {
 			<input type="hidden" name="on" value="0"/>
-			<span class="tag">On the want-to-read list</span>
-			<button type="submit" class="linkbtn small">Remove from list</button>
+			<span class="tag">{ t(ctx, "On the want-to-read list") }</span>
+			<button type="submit" class="linkbtn small">{ t(ctx, "Remove from list") }</button>
 		} else {
 			<input type="hidden" name="on" value="1"/>
-			<span class="muted small">Not on the want-to-read list.</span>
-			<button type="submit" class="linkbtn small">Add to list</button>
+			<span class="muted small">{ t(ctx, "Not on the want-to-read list.") }</span>
+			<button type="submit" class="linkbtn small">{ t(ctx, "Add to list") }</button>
 		}
 	</form>
 }
@@ -180,33 +182,33 @@ type BookFormData struct {
 }
 
 templ BookFormPage(d BookFormData) {
-	@Layout(bookFormTitle(d.IsNew)) {
+	@Layout(bookFormTitle(ctx, d.IsNew)) {
 		<div class="page-head">
-			<h1>{ bookFormTitle(d.IsNew) }</h1>
+			<h1>{ bookFormTitle(ctx, d.IsNew) }</h1>
 		</div>
 		if d.NominatePoll != 0 {
-			<div class="flash flash-ok">After saving, the book will be suggested in “{ d.PollTitle }”.</div>
+			<div class="flash flash-ok">{ tf(ctx, "After saving, the book will be suggested in %s.", q(ctx, d.PollTitle)) }</div>
 		}
 		if d.Existing != nil {
 			<div class="flash flash-error">
-				This book is already in the library: <a href={ url("/books/%d", d.Existing.ID) }>{ d.Existing.Title }</a>.
+				{ t(ctx, "This book is already in the library:") } <a href={ url("/books/%d", d.Existing.ID) }>{ d.Existing.Title }</a>.
 			</div>
 		}
 		<div class={ templ.Classes("book-form-layout", templ.KV("with-search", d.IsNew)) }>
 			if d.IsNew {
 				<section class="card">
-					<h2>Search Open Library</h2>
-					<p class="muted small">Pick a result to fill in the details, then adjust anything you like.</p>
-					<input type="search" name="q" placeholder="Title, author or ISBN" aria-label="Search Open Library"
+					<h2>{ t(ctx, "Search Open Library") }</h2>
+					<p class="muted small">{ t(ctx, "Pick a result to fill in the details, then adjust anything you like.") }</p>
+					<input type="search" name="q" placeholder={ t(ctx, "Title, author or ISBN") } aria-label={ t(ctx, "Search Open Library") }
 						hx-get="/books/lookup" hx-trigger="input changed delay:450ms, search"
 						hx-target="#lookup-results" hx-swap="innerHTML" hx-indicator="#lookup-spinner"/>
-					<div id="lookup-spinner" class="htmx-indicator muted small">Searching…</div>
+					<div id="lookup-spinner" class="htmx-indicator muted small">{ t(ctx, "Searching…") }</div>
 					<div id="lookup-results" class="lookup-results"></div>
 				</section>
 			}
 			<section class="card">
 				if d.IsNew {
-					<h2>Details</h2>
+					<h2>{ t(ctx, "Details") }</h2>
 				}
 				@bookForm(d)
 			</section>
@@ -214,11 +216,11 @@ templ BookFormPage(d BookFormData) {
 	}
 }
 
-func bookFormTitle(isNew bool) string {
+func bookFormTitle(ctx context.Context, isNew bool) string {
 	if isNew {
-		return "Add a book"
+		return t(ctx, "Add a book")
 	}
-	return "Edit book"
+	return t(ctx, "Edit book")
 }
 
 templ bookForm(d BookFormData) {
@@ -240,46 +242,46 @@ templ bookForm(d BookFormData) {
 			</div>
 			<div class="stack">
 				<label>
-					Title
+					{ t(ctx, "Title") }
 					<input type="text" name="title" value={ d.Book.Title } required maxlength="300"/>
 					@fieldError(d.Errors, "title")
 				</label>
 				<label>
-					Author(s)
+					{ t(ctx, "Author(s)") }
 					<input type="text" name="authors" value={ d.Book.Authors } maxlength="300"/>
 				</label>
 				<label>
-					First published
+					{ t(ctx, "First published") }
 					<input type="number" name="year" value={ yearStr(d.Book.Year) } min="-3000" max="3000" inputmode="numeric"/>
 					@fieldError(d.Errors, "year")
 				</label>
 			</div>
 		</div>
 		<label>
-			Goodreads link
+			{ t(ctx, "Goodreads link") }
 			<input type="url" name="goodreads_url" value={ d.Book.GoodreadsURL } placeholder="https://www.goodreads.com/book/show/…"/>
-			<span class="hint">Where everyone rates it. Filled in automatically when Open Library knows it.</span>
+			<span class="hint">{ t(ctx, "Where everyone rates it. Filled in automatically when Open Library knows it.") }</span>
 			@fieldError(d.Errors, "goodreads_url")
 		</label>
 		<label>
-			Cover image URL
+			{ t(ctx, "Cover image URL") }
 			<input type="url" name="cover_url" value={ d.Book.CoverURL } data-cover-input/>
 			@fieldError(d.Errors, "cover_url")
 		</label>
 		<label>
-			Notes
-			<textarea name="notes" rows="4" maxlength="5000" placeholder="Why it's interesting, content notes, edition to get…">{ d.Book.Notes }</textarea>
+			{ t(ctx, "Notes") }
+			<textarea name="notes" rows="4" maxlength="5000" placeholder={ t(ctx, "Why it's interesting, content notes, edition to get…") }>{ d.Book.Notes }</textarea>
 		</label>
 		<label class="check">
 			<input type="checkbox" name="on_wishlist" value="1" checked?={ d.Book.OnWishlist }/>
-			On the club's want-to-read list
+			{ t(ctx, "On the club's want-to-read list") }
 		</label>
 		<div class="actions">
-			<button type="submit" class="btn btn-primary">Save book</button>
+			<button type="submit" class="btn btn-primary">{ t(ctx, "Save book") }</button>
 			if d.IsNew {
-				<a href="/books" class="btn btn-ghost">Cancel</a>
+				<a href="/books" class="btn btn-ghost">{ t(ctx, "Cancel") }</a>
 			} else {
-				<a href={ url("/books/%d", d.Book.ID) } class="btn btn-ghost">Cancel</a>
+				<a href={ url("/books/%d", d.Book.ID) } class="btn btn-ghost">{ t(ctx, "Cancel") }</a>
 			}
 		</div>
 	</form>
@@ -289,7 +291,7 @@ templ LookupResults(results []openlibrary.Result, errMsg string, query string) {
 	if errMsg != "" {
 		<p class="field-error">{ errMsg }</p>
 	} else if query != "" && len(results) == 0 {
-		<p class="muted small">Nothing found for “{ query }”. You can fill in the details by hand.</p>
+		<p class="muted small">{ tf(ctx, "Nothing found for %s. You can fill in the details by hand.", q(ctx, query)) }</p>
 	} else {
 		<ul class="lookup-list">
 			for _, r := range results {
@@ -309,7 +311,7 @@ templ LookupResults(results []openlibrary.Result, errMsg string, query string) {
 								}
 							</span>
 							if r.GoodreadsURL != "" {
-								<span class="small tag">Goodreads link found</span>
+								<span class="small tag">{ t(ctx, "Goodreads link found") }</span>
 							}
 						</span>
 					</button>

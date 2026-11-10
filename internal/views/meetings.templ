@@ -1,6 +1,7 @@
 package views
 
 import "bookclub/internal/store"
+import "context"
 
 type MeetingsData struct {
 	Upcoming []*store.Meeting
@@ -8,26 +9,26 @@ type MeetingsData struct {
 }
 
 templ MeetingsPage(d MeetingsData) {
-	@Layout("Meetings") {
+	@Layout(t(ctx, "Meetings")) {
 		<div class="page-head">
-			<h1>Meetings</h1>
+			<h1>{ t(ctx, "Meetings") }</h1>
 			<div class="actions">
-				<a class="btn btn-primary" href="/meetings/new">Plan a meeting</a>
+				<a class="btn btn-primary" href="/meetings/new">{ t(ctx, "Plan a meeting") }</a>
 			</div>
 		</div>
 		<section class="stack">
-			<h2>Upcoming</h2>
+			<h2>{ t(ctx, "Upcoming") }</h2>
 			if len(d.Upcoming) == 0 {
-				<div class="card empty"><p>Nothing planned yet.</p></div>
+				<div class="card empty"><p>{ t(ctx, "Nothing planned yet.") }</p></div>
 			}
 			for _, m := range d.Upcoming {
 				@meetingCard(m)
 			}
 		</section>
 		<section class="stack">
-			<h2>Past meetings</h2>
+			<h2>{ t(ctx, "Past meetings") }</h2>
 			if len(d.Past) == 0 {
-				<div class="card empty"><p>No past meetings recorded yet. You can add old meetings too — just pick a date in the past.</p></div>
+				<div class="card empty"><p>{ t(ctx, "No past meetings recorded yet. You can add old meetings too — just pick a date in the past.") }</p></div>
 			}
 			for _, m := range d.Past {
 				@meetingCard(m)
@@ -45,23 +46,23 @@ type MeetingData struct {
 }
 
 templ MeetingPage(d MeetingData) {
-	@Layout(meetingName(d.Meeting)) {
-		<p class="crumbs"><a href="/meetings">Meetings</a></p>
+	@Layout(meetingName(ctx, d.Meeting)) {
+		<p class="crumbs"><a href="/meetings">{ t(ctx, "Meetings") }</a></p>
 		<div class="page-head">
 			<div>
-				<h1>{ meetingName(d.Meeting) }</h1>
+				<h1>{ meetingName(ctx, d.Meeting) }</h1>
 				<p class="lead">
-					{ fmtMeetingTime(d.Meeting.StartsAt) }
+					{ fmtMeetingTime(ctx, d.Meeting.StartsAt) }
 					if d.Meeting.Place != "" {
 						{ " · " + d.Meeting.Place }
 					}
 				</p>
 			</div>
 			<div class="actions">
-				<a class="btn btn-small" href={ url("/meetings/%d/edit", d.Meeting.ID) }>Edit</a>
-				<form method="post" action={ url("/meetings/%d/delete", d.Meeting.ID) } class="inline" data-confirm="Delete this meeting? Its comments will be deleted too. Books stay in the library.">
+				<a class="btn btn-small" href={ url("/meetings/%d/edit", d.Meeting.ID) }>{ t(ctx, "Edit") }</a>
+				<form method="post" action={ url("/meetings/%d/delete", d.Meeting.ID) } class="inline" data-confirm={ t(ctx, "Delete this meeting? Its comments will be deleted too. Books stay in the library.") }>
 					@csrfField()
-					<button type="submit" class="btn btn-small btn-danger">Delete</button>
+					<button type="submit" class="btn btn-small btn-danger">{ t(ctx, "Delete") }</button>
 				</form>
 			</div>
 		</div>
@@ -69,11 +70,11 @@ templ MeetingPage(d MeetingData) {
 		@MeetingBooks(d.Meeting, d.AllBooks, "")
 		<section class="card">
 			<div class="section-head">
-				<h2>Votes for this meeting</h2>
-				<a class="btn btn-small" href={ url("/polls/new?meeting=%d", d.Meeting.ID) }>Start a vote</a>
+				<h2>{ t(ctx, "Votes for this meeting") }</h2>
+				<a class="btn btn-small" href={ url("/polls/new?meeting=%d", d.Meeting.ID) }>{ t(ctx, "Start a vote") }</a>
 			</div>
 			if len(d.Polls) == 0 {
-				<p class="muted">No votes linked to this meeting.</p>
+				<p class="muted">{ t(ctx, "No votes linked to this meeting.") }</p>
 			} else {
 				<div class="stack">
 					for _, p := range d.Polls {
@@ -89,12 +90,12 @@ templ MeetingPage(d MeetingData) {
 
 templ MeetingBooks(m *store.Meeting, all []*store.Book, errMsg string) {
 	<section class="card" id="meeting-books">
-		<h2>Books</h2>
+		<h2>{ t(ctx, "Books") }</h2>
 		if errMsg != "" {
 			<p class="field-error">{ errMsg }</p>
 		}
 		if len(m.Books) == 0 {
-			<p class="muted">No books yet. A meeting can have none, one, or several.</p>
+			<p class="muted">{ t(ctx, "No books yet. A meeting can have none, one, or several.") }</p>
 		} else {
 			<ul class="book-rows">
 				for _, mb := range m.Books {
@@ -110,30 +111,30 @@ templ MeetingBooks(m *store.Meeting, all []*store.Book, errMsg string) {
 						</div>
 						<form method="post" action={ url("/meetings/%d/books/%d/remove", m.ID, mb.Book.ID) }
 							hx-post={ path("/meetings/%d/books/%d/remove", m.ID, mb.Book.ID) } hx-target="#meeting-books" hx-swap="outerHTML"
-							hx-confirm="Remove this book from the meeting?">
+							hx-confirm={ t(ctx, "Remove this book from the meeting?") }>
 							@csrfField()
-							<button type="submit" class="linkbtn small">Remove</button>
+							<button type="submit" class="linkbtn small">{ t(ctx, "Remove") }</button>
 						</form>
 					</li>
 				}
 			</ul>
 		}
 		<details class="add-panel">
-			<summary>Add a book to this meeting</summary>
+			<summary>{ t(ctx, "Add a book to this meeting") }</summary>
 			<form method="post" action={ url("/meetings/%d/books", m.ID) }
 				hx-post={ path("/meetings/%d/books", m.ID) } hx-target="#meeting-books" hx-swap="outerHTML" class="stack">
 				@csrfField()
 				<label>
-					Book
+					{ t(ctx, "Book") }
 					@bookSelect(all, m)
 				</label>
 				<label>
-					Note (optional)
-					<input type="text" name="note" maxlength="300" placeholder="e.g. chapters 1–10, Anna's pick, read either one"/>
+					{ t(ctx, "Note (optional)") }
+					<input type="text" name="note" maxlength="300" placeholder={ t(ctx, "e.g. chapters 1–10, Anna's pick, read either one") }/>
 				</label>
 				<div class="actions">
-					<button type="submit" class="btn btn-small btn-primary">Add</button>
-					<a href={ url("/books/new") } class="small">Book not in the library yet?</a>
+					<button type="submit" class="btn btn-small btn-primary">{ t(ctx, "Add") }</button>
+					<a href={ url("/books/new") } class="small">{ t(ctx, "Book not in the library yet?") }</a>
 				</div>
 			</form>
 		</details>
@@ -142,15 +143,15 @@ templ MeetingBooks(m *store.Meeting, all []*store.Book, errMsg string) {
 
 templ bookSelect(all []*store.Book, m *store.Meeting) {
 	<select name="book_id" required>
-		<option value="">Choose a book…</option>
-		<optgroup label="Want to read">
+		<option value="">{ t(ctx, "Choose a book…") }</option>
+		<optgroup label={ t(ctx, "Want to read") }>
 			for _, b := range all {
 				if b.OnWishlist && !meetingHasBook(m, b.ID) {
 					<option value={ itoa(b.ID) }>{ b.Title }{ authorSuffix(b) }</option>
 				}
 			}
 		</optgroup>
-		<optgroup label="Rest of the library">
+		<optgroup label={ t(ctx, "Rest of the library") }>
 			for _, b := range all {
 				if !b.OnWishlist && !meetingHasBook(m, b.ID) {
 					<option value={ itoa(b.ID) }>{ b.Title }{ authorSuffix(b) }</option>
@@ -187,8 +188,8 @@ type MeetingFormData struct {
 }
 
 templ MeetingFormPage(d MeetingFormData) {
-	@Layout(meetingFormTitle(d.IsNew)) {
-		<div class="page-head"><h1>{ meetingFormTitle(d.IsNew) }</h1></div>
+	@Layout(meetingFormTitle(ctx, d.IsNew)) {
+		<div class="page-head"><h1>{ meetingFormTitle(ctx, d.IsNew) }</h1></div>
 		<section class="card narrow">
 			<form method="post" class="stack"
 				if d.IsNew {
@@ -199,42 +200,42 @@ templ MeetingFormPage(d MeetingFormData) {
 			>
 				@csrfField()
 				<label>
-					Title (optional)
-					<input type="text" name="title" value={ d.Meeting.Title } maxlength="200" placeholder="e.g. Summer picnic edition"/>
+					{ t(ctx, "Title (optional)") }
+					<input type="text" name="title" value={ d.Meeting.Title } maxlength="200" placeholder={ t(ctx, "e.g. Summer picnic edition") }/>
 				</label>
 				<label>
-					Date and time
+					{ t(ctx, "Date and time") }
 					<input type="datetime-local" name="starts_at" value={ d.StartsAt }/>
-					<span class="hint">Leave empty if it isn't decided yet.</span>
+					<span class="hint">{ t(ctx, "Leave empty if it isn't decided yet.") }</span>
 					@fieldError(d.Errors, "starts_at")
 				</label>
 				<label>
-					Place (optional)
+					{ t(ctx, "Place (optional)") }
 					<input type="text" name="place" value={ d.Meeting.Place } maxlength="200"/>
 				</label>
 				<label>
-					Description (optional)
-					<textarea name="description" rows="6" maxlength="20000" placeholder="Anything worth writing down: plans, discussion questions, how it went…">{ d.Meeting.Description }</textarea>
+					{ t(ctx, "Description (optional)") }
+					<textarea name="description" rows="6" maxlength="20000" placeholder={ t(ctx, "Anything worth writing down: plans, discussion questions, how it went…") }>{ d.Meeting.Description }</textarea>
 				</label>
 				<div class="actions">
-					<button type="submit" class="btn btn-primary">Save meeting</button>
+					<button type="submit" class="btn btn-primary">{ t(ctx, "Save meeting") }</button>
 					if d.IsNew {
-						<a href="/meetings" class="btn btn-ghost">Cancel</a>
+						<a href="/meetings" class="btn btn-ghost">{ t(ctx, "Cancel") }</a>
 					} else {
-						<a href={ url("/meetings/%d", d.Meeting.ID) } class="btn btn-ghost">Cancel</a>
+						<a href={ url("/meetings/%d", d.Meeting.ID) } class="btn btn-ghost">{ t(ctx, "Cancel") }</a>
 					}
 				</div>
 				if d.IsNew {
-					<p class="muted small">You can add books after saving.</p>
+					<p class="muted small">{ t(ctx, "You can add books after saving.") }</p>
 				}
 			</form>
 		</section>
 	}
 }
 
-func meetingFormTitle(isNew bool) string {
+func meetingFormTitle(ctx context.Context, isNew bool) string {
 	if isNew {
-		return "Plan a meeting"
+		return t(ctx, "Plan a meeting")
 	}
-	return "Edit meeting"
+	return t(ctx, "Edit meeting")
 }

@@ -17,6 +17,7 @@ import (
 
 	"bookclub/internal/appctx"
 	"bookclub/internal/config"
+	"bookclub/internal/i18n"
 	"bookclub/internal/openlibrary"
 	"bookclub/internal/store"
 	"bookclub/internal/views"
@@ -43,7 +44,7 @@ func New(cfg config.Config, st *store.Store) *Server {
 		ol:      openlibrary.New(),
 		limiter: newLoginLimiter(),
 	}
-	views.Loc = cfg.Location
+	i18n.Loc = cfg.Location
 	views.AssetVersion = assetVersion()
 	return s
 }
@@ -111,6 +112,7 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	// Public
+	mux.HandleFunc("GET /lang/{lang}", s.h(s.setLanguage))
 	mux.HandleFunc("GET /login", s.h(s.loginPage))
 	mux.HandleFunc("POST /login", s.h(s.login))
 	mux.HandleFunc("POST /logout", s.h(s.logout))
@@ -267,7 +269,10 @@ func (s *Server) loadSession(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		rc := &appctx.Request{Path: r.URL.Path, ClubName: s.club(r.Context())}
+		rc := &appctx.Request{Path: r.URL.Path, ClubName: s.club(r.Context()), Lang: requestLang(r)}
+		if r.Method == http.MethodGet && !isHTMX(r) {
+			rc.URI = r.URL.RequestURI()
+		}
 		if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
 			if u, csrf, err := s.st.SessionUser(r.Context(), hashToken(c.Value)); err == nil {
 				rc.User = u
@@ -281,6 +286,31 @@ func (s *Server) loadSession(next http.Handler) http.Handler {
 	})
 }
 
+const langCookie = "bookclub_lang"
+
+// requestLang uses the language the person picked, else their browser's.
+func requestLang(r *http.Request) i18n.Lang {
+	if c, err := r.Cookie(langCookie); err == nil {
+		if l, ok := i18n.Parse(c.Value); ok {
+			return l
+		}
+	}
+	return i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
+}
+
+func (s *Server) setLanguage(w http.ResponseWriter, r *http.Request) error {
+	l, ok := i18n.Parse(r.PathValue("lang"))
+	if !ok {
+		return errNotFound
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: langCookie, Value: string(l), Path: "/", MaxAge: 400 * 24 * 3600,
+		HttpOnly: true, Secure: s.cfg.CookieSecure, SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, safeNext(r.URL.Query().Get("next")), http.StatusSeeOther)
+	return nil
+}
+
 // csrf rejects cross-site form posts: the Origin header (sent by browsers on
 // POST) must match, and logged-in users must present their session's token.
 func (s *Server) csrf(next http.Handler) http.Handler {
@@ -291,7 +321,7 @@ func (s *Server) csrf(next http.Handler) http.Handler {
 		}
 		if origin := r.Header.Get("Origin"); origin != "" && origin != "null" {
 			if u, err := url.Parse(origin); err != nil || u.Host != r.Host {
-				http.Error(w, "cross-site request blocked", http.StatusForbidden)
+				http.Error(w, tr(r, "Cross-site request blocked."), http.StatusForbidden)
 				return
 			}
 		}
@@ -302,7 +332,7 @@ func (s *Server) csrf(next http.Handler) http.Handler {
 				token = r.FormValue("csrf")
 			}
 			if token == "" || token != rc.CSRF {
-				http.Error(w, "Your session has expired or the form is stale. Reload the page and try again.", http.StatusForbidden)
+				http.Error(w, tr(r, "Your session has expired or the form is stale. Reload the page and try again."), http.StatusForbidden)
 				return
 			}
 		}

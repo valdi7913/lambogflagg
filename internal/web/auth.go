@@ -36,11 +36,11 @@ func validatePassword(r *http.Request, errs map[string]string) string {
 	pw := r.FormValue("password")
 	switch {
 	case len(pw) < 8:
-		errs["password"] = "Use at least 8 characters."
+		errs["password"] = tr(r, "Use at least 8 characters.")
 	case len(pw) > 72:
-		errs["password"] = "That's too long (max 72 characters)."
+		errs["password"] = tr(r, "That's too long (max 72 characters).")
 	case pw != r.FormValue("password2"):
-		errs["password2"] = "The passwords don't match."
+		errs["password2"] = tr(r, "The passwords don't match.")
 	}
 	return pw
 }
@@ -52,12 +52,12 @@ func (s *Server) readAccountForm(ctx context.Context, r *http.Request) (views.Ac
 		Errors:      map[string]string{},
 	}
 	if f.DisplayName == "" || len([]rune(f.DisplayName)) > 60 {
-		f.Errors["display_name"] = "Enter a name (up to 60 characters)."
+		f.Errors["display_name"] = tr(r, "Enter a name (up to 60 characters).")
 	}
 	if !usernameRe.MatchString(f.Username) {
-		f.Errors["username"] = "2–40 letters, numbers, dots, dashes or underscores."
+		f.Errors["username"] = tr(r, "2–40 letters, numbers, dots, dashes or underscores.")
 	} else if _, err := s.st.UserByUsername(ctx, f.Username); err == nil {
-		f.Errors["username"] = "That username is taken."
+		f.Errors["username"] = tr(r, "That username is taken.")
 	}
 	pw := validatePassword(r, f.Errors)
 	return f, pw
@@ -99,7 +99,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	next := r.FormValue("next")
 	key := clientIP(r)
 	if s.limiter.blocked(key) {
-		return render(w, r, http.StatusTooManyRequests, views.LoginPage(username, next, "Too many failed attempts. Wait 15 minutes and try again."))
+		return render(w, r, http.StatusTooManyRequests, views.LoginPage(username, next, tr(r, "Too many failed attempts. Wait 15 minutes and try again.")))
 	}
 	u, err := s.st.UserByUsername(r.Context(), username)
 	if err != nil {
@@ -107,9 +107,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	}
 	if err != nil || !checkPassword(u.PasswordHash, r.FormValue("password")) || !u.Active() {
 		s.limiter.fail(key)
-		msg := "Wrong username or password."
+		msg := tr(r, "Wrong username or password.")
 		if err == nil && !u.Active() && checkPassword(u.PasswordHash, r.FormValue("password")) {
-			msg = "This account has been deactivated."
+			msg = tr(r, "This account has been deactivated.")
 		}
 		return render(w, r, http.StatusUnauthorized, views.LoginPage(username, next, msg))
 	}
@@ -154,7 +154,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) error {
 	f, pw := s.readAccountForm(r.Context(), r)
 	clubName := formStr(r, "club_name")
 	if clubName == "" {
-		clubName = "Book Club"
+		clubName = tr(r, "Book Club")
 	}
 	if len(f.Errors) > 0 {
 		return render(w, r, http.StatusUnprocessableEntity, views.SetupPage(token, true, f))
@@ -171,7 +171,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.SetSetting(r.Context(), q, "club_name", clubName); err != nil {
 			return err
 		}
-		return s.st.Log(r.Context(), q, u.ID, "create", "user", u.ID, "set up the club and created the first account", nil)
+		return s.st.Log(r.Context(), q, u.ID, "create", "user", u.ID, store.M("set up the club and created the first account"), nil)
 	})
 	if err != nil {
 		return err
@@ -181,7 +181,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) error {
 	if err := s.startSession(w, r, u.ID); err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Welcome! Invite your friends from the Members page.")
+	s.flash(w, r, "ok", "Welcome! Invite your friends from the Members page.")
 	return redirect(w, r, "/members")
 }
 
@@ -222,7 +222,7 @@ func (s *Server) join(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.UseInvite(r.Context(), q, locked.ID, u.ID); err != nil {
 			return err
 		}
-		return s.st.Log(r.Context(), q, u.ID, "create", "user", u.ID, "joined the club", nil)
+		return s.st.Log(r.Context(), q, u.ID, "create", "user", u.ID, store.M("joined the club"), nil)
 	})
 	if err != nil {
 		return err
@@ -230,7 +230,7 @@ func (s *Server) join(w http.ResponseWriter, r *http.Request) error {
 	if err := s.startSession(w, r, u.ID); err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Welcome to "+s.club(r.Context())+"!")
+	s.flash(w, r, "ok", "Welcome to %s!", s.club(r.Context()))
 	return redirect(w, r, "/")
 }
 
@@ -285,7 +285,7 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.DeleteUserSessions(r.Context(), q, target.ID); err != nil {
 			return err
 		}
-		return s.st.Log(r.Context(), q, target.ID, "update", "user", target.ID, "set a new password with a reset link", nil)
+		return s.st.Log(r.Context(), q, target.ID, "update", "user", target.ID, store.M("set a new password with a reset link"), nil)
 	})
 	if err != nil {
 		return err
@@ -296,7 +296,7 @@ func (s *Server) reset(w http.ResponseWriter, r *http.Request) error {
 	if err := s.startSession(w, r, target.ID); err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Password changed. You're logged in.")
+	s.flash(w, r, "ok", "Password changed. You're logged in.")
 	return redirect(w, r, "/")
 }
 
@@ -310,21 +310,21 @@ func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) error {
 	u := user(r)
 	name := formStr(r, "display_name")
 	if name == "" || len([]rune(name)) > 60 {
-		return render(w, r, http.StatusUnprocessableEntity, views.MePage(u, "Enter a name (up to 60 characters).", map[string]string{}))
+		return render(w, r, http.StatusUnprocessableEntity, views.MePage(u, tr(r, "Enter a name (up to 60 characters)."), map[string]string{}))
 	}
 	if name != u.DisplayName {
 		err := s.st.Tx(r.Context(), func(q store.Querier) error {
 			if err := s.st.UpdateDisplayName(r.Context(), q, u.ID, name); err != nil {
 				return err
 			}
-			return s.st.Log(r.Context(), q, u.ID, "update", "user", u.ID, "changed their name",
+			return s.st.Log(r.Context(), q, u.ID, "update", "user", u.ID, store.M("changed their name"),
 				store.Diff([][3]string{{"name", u.DisplayName, name}}))
 		})
 		if err != nil {
 			return err
 		}
 	}
-	s.flash(w, "ok", "Saved.")
+	s.flash(w, r, "ok", "Saved.")
 	return redirect(w, r, "/me")
 }
 
@@ -332,7 +332,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) error {
 	u := user(r)
 	errs := map[string]string{}
 	if !checkPassword(u.PasswordHash, r.FormValue("current")) {
-		errs["current"] = "That's not your current password."
+		errs["current"] = tr(r, "That's not your current password.")
 	}
 	pw := validatePassword(r, errs)
 	if len(errs) > 0 {
@@ -355,7 +355,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) error {
 	if err := s.startSession(w, r, u.ID); err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Password changed. Other devices have been logged out.")
+	s.flash(w, r, "ok", "Password changed. Other devices have been logged out.")
 	return redirect(w, r, "/me")
 }
 

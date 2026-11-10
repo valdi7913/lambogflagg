@@ -20,7 +20,7 @@
     if (!btn) return;
     var input = document.querySelector(btn.getAttribute("data-copy"));
     if (!input) return;
-    var done = function () { toast("Link copied"); };
+    var done = function () { toast(msg("copied", "Link copied")); };
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(input.value).then(done, function () { input.select(); });
     } else {
@@ -113,7 +113,7 @@
       var out = form.querySelector("[data-points-left]");
       if (out) {
         var left = total - used;
-        out.textContent = left >= 0 ? " " + left + " left." : " " + (-left) + " too many!";
+        out.textContent = " " + (left >= 0 ? msg("pointsLeft", "%d left.").replace("%d", left) : msg("pointsOver", "%d too many!").replace("%d", -left));
         out.classList.toggle("over", left < 0);
       }
     }
@@ -152,11 +152,16 @@
   // Show htmx request errors instead of failing silently.
   document.addEventListener("htmx:responseError", function (e) {
     var xhr = e.detail.xhr;
-    toast(xhr && xhr.responseText && xhr.responseText.length < 300 ? xhr.responseText : "Something went wrong. Reload and try again.", true);
+    toast(xhr && xhr.responseText && xhr.responseText.length < 300 ? xhr.responseText : msg("errorGeneric", "Something went wrong. Reload and try again."), true);
   });
   document.addEventListener("htmx:sendError", function () {
-    toast("Couldn't reach the server. Check your connection.", true);
+    toast(msg("errorOffline", "Couldn't reach the server. Check your connection."), true);
   });
+
+  // Translated phrases come from data- attributes on <body>.
+  function msg(key, fallback) {
+    return (document.body && document.body.dataset[key]) || fallback;
+  }
 
   var toastTimer;
   function toast(msg, isError) {

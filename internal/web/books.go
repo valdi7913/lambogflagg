@@ -95,19 +95,19 @@ func readBookForm(r *http.Request, b *store.Book) map[string]string {
 	if y := formStr(r, "year"); y != "" {
 		n, err := strconv.Atoi(y)
 		if err != nil || n < -3000 || n > 3000 {
-			errs["year"] = "Enter a year like 1984."
+			errs["year"] = tr(r, "Enter a year like 1984.")
 		} else {
 			b.Year = &n
 		}
 	}
 	if b.Title == "" {
-		errs["title"] = "A book needs a title."
+		errs["title"] = tr(r, "A book needs a title.")
 	}
 	if !validHTTPURL(b.GoodreadsURL) {
-		errs["goodreads_url"] = "Enter a full link starting with https://"
+		errs["goodreads_url"] = tr(r, "Enter a full link starting with https://")
 	}
 	if !validHTTPURL(b.CoverURL) {
-		errs["cover_url"] = "Enter a full link starting with https://"
+		errs["cover_url"] = tr(r, "Enter a full link starting with https://")
 	}
 	return errs
 }
@@ -134,9 +134,9 @@ func (s *Server) createBook(w http.ResponseWriter, r *http.Request) error {
 		if existing, err := s.st.BookByOpenLibraryKey(ctx, b.OpenLibraryKey); err == nil {
 			if pollID > 0 {
 				if err := s.nominateBookTx(ctx, pollID, existing.ID, "", u.ID); err != nil {
-					s.flash(w, "error", "That book is already in the library, but couldn't be suggested: "+err.Error())
+					s.flash(w, r, "error", "That book is already in the library, but couldn't be suggested: %s", errText(r, err))
 				} else {
-					s.flash(w, "ok", "That book was already in the library, so it was suggested from there.")
+					s.flash(w, r, "ok", "That book was already in the library, so it was suggested from there.")
 				}
 				return redirect(w, r, fmt.Sprintf("/polls/%d", pollID))
 			}
@@ -148,20 +148,20 @@ func (s *Server) createBook(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.CreateBook(ctx, q, b); err != nil {
 			return err
 		}
-		return s.st.Log(ctx, q, u.ID, "create", "book", b.ID, "added the book "+quote(b.Title), nil)
+		return s.st.Log(ctx, q, u.ID, "create", "book", b.ID, store.M("added the book “%s”", b.Title), nil)
 	})
 	if err != nil {
 		return err
 	}
 	if pollID > 0 {
 		if err := s.nominateBookTx(ctx, pollID, b.ID, "", u.ID); err != nil {
-			s.flash(w, "error", "Book added, but it couldn't be suggested: "+err.Error())
+			s.flash(w, r, "error", "Book added, but it couldn't be suggested: %s", errText(r, err))
 		} else {
-			s.flash(w, "ok", "Book added and suggested.")
+			s.flash(w, r, "ok", "Book added and suggested.")
 		}
 		return redirect(w, r, fmt.Sprintf("/polls/%d", pollID))
 	}
-	s.flash(w, "ok", "Book added.")
+	s.flash(w, r, "ok", "Book added.")
 	return redirect(w, r, fmt.Sprintf("/books/%d", b.ID))
 }
 
@@ -174,7 +174,7 @@ func (s *Server) lookupBooks(w http.ResponseWriter, r *http.Request) error {
 	defer cancel()
 	results, err := s.ol.Search(ctx, q)
 	if err != nil {
-		return ok(w, r, views.LookupResults(nil, "Couldn't reach Open Library right now. Fill in the details by hand.", q))
+		return ok(w, r, views.LookupResults(nil, tr(r, "Couldn't reach Open Library right now. Fill in the details by hand."), q))
 	}
 	return ok(w, r, views.LookupResults(results, "", q))
 }
@@ -247,13 +247,13 @@ func (s *Server) updateBook(w http.ResponseWriter, r *http.Request) error {
 			if err := s.st.UpdateBook(ctx, q, &b); err != nil {
 				return err
 			}
-			return s.st.Log(ctx, q, user(r).ID, "update", "book", b.ID, "edited the book "+quote(b.Title), changes)
+			return s.st.Log(ctx, q, user(r).ID, "update", "book", b.ID, store.M("edited the book “%s”", b.Title), changes)
 		})
 		if err != nil {
 			return err
 		}
 	}
-	s.flash(w, "ok", "Saved.")
+	s.flash(w, r, "ok", "Saved.")
 	return redirect(w, r, fmt.Sprintf("/books/%d", id))
 }
 
@@ -269,9 +269,9 @@ func (s *Server) toggleWishlist(w http.ResponseWriter, r *http.Request) error {
 	}
 	on := formBool(r, "on")
 	if on != b.OnWishlist {
-		summary := "added " + quote(b.Title) + " to the want-to-read list"
+		summary := store.M("added “%s” to the want-to-read list", b.Title)
 		if !on {
-			summary = "took " + quote(b.Title) + " off the want-to-read list"
+			summary = store.M("took “%s” off the want-to-read list", b.Title)
 		}
 		err = s.st.Tx(ctx, func(q store.Querier) error {
 			if err := s.st.SetWishlist(ctx, q, id, on); err != nil {
@@ -304,15 +304,15 @@ func (s *Server) deleteBook(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.DeleteBook(ctx, q, id); err != nil {
 			return err
 		}
-		return s.st.Log(ctx, q, user(r).ID, "delete", "book", id, "deleted the book "+quote(b.Title), nil)
+		return s.st.Log(ctx, q, user(r).ID, "delete", "book", id, store.M("deleted the book “%s”", b.Title), nil)
 	})
 	if errors.Is(err, store.ErrInUse) {
-		s.flash(w, "error", "This book is part of a meeting or a vote, so it can't be deleted. You can take it off the want-to-read list instead.")
+		s.flash(w, r, "error", "This book is part of a meeting or a vote, so it can't be deleted. You can take it off the want-to-read list instead.")
 		return redirect(w, r, fmt.Sprintf("/books/%d", id))
 	}
 	if err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Book deleted.")
+	s.flash(w, r, "ok", "Book deleted.")
 	return redirect(w, r, "/books")
 }

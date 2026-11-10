@@ -31,7 +31,7 @@ func subjectColumn(subjectType string) (string, error) {
 	return "", fmt.Errorf("unknown comment subject %q", subjectType)
 }
 
-const commentSelect = `SELECT c.id, c.user_id, coalesce(u.display_name, 'Former member'),
+const commentSelect = `SELECT c.id, c.user_id, coalesce(u.display_name, ''),
 	CASE WHEN c.book_id IS NOT NULL THEN 'book' WHEN c.meeting_id IS NOT NULL THEN 'meeting' ELSE 'poll' END,
 	coalesce(c.book_id, c.meeting_id, c.poll_id), c.body, c.created_at, c.edited_at
 	FROM comments c LEFT JOIN users u ON u.id = c.user_id `

@@ -153,14 +153,3 @@ func (s *Store) RemoveMeetingBook(ctx context.Context, q Querier, meetingID, boo
 	_, err := q.Exec(ctx, `DELETE FROM meeting_books WHERE meeting_id = $1 AND book_id = $2`, meetingID, bookID)
 	return err
 }
-
-// MeetingDisplayName gives a meeting a readable name even without a title.
-func MeetingDisplayName(m *Meeting, loc *time.Location) string {
-	if m.Title != "" {
-		return m.Title
-	}
-	if m.StartsAt != nil {
-		return "Meeting on " + m.StartsAt.In(loc).Format("Mon 2 Jan 2006")
-	}
-	return "Meeting (date to be decided)"
-}

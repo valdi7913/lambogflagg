@@ -34,7 +34,7 @@ func (s *Server) readMeetingForm(r *http.Request, m *store.Meeting) (string, map
 	raw := formStr(r, "starts_at")
 	t, err := s.parseLocalTime(raw)
 	if err != nil {
-		errs["starts_at"] = "Enter a valid date and time."
+		errs["starts_at"] = tr(r, "Enter a valid date and time.")
 	}
 	m.StartsAt = t
 	return raw, errs
@@ -52,12 +52,12 @@ func (s *Server) createMeeting(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.CreateMeeting(ctx, q, m); err != nil {
 			return err
 		}
-		return s.st.Log(ctx, q, u.ID, "create", "meeting", m.ID, "planned "+quote(store.MeetingDisplayName(m, s.cfg.Location)), nil)
+		return s.st.Log(ctx, q, u.ID, "create", "meeting", m.ID, store.M("planned “%s”", meetingArg(m)), nil)
 	})
 	if err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Meeting saved. Add the book(s) below.")
+	s.flash(w, r, "ok", "Meeting saved. Add the book(s) below.")
 	return redirect(w, r, fmt.Sprintf("/meetings/%d", m.ID))
 }
 
@@ -131,13 +131,13 @@ func (s *Server) updateMeeting(w http.ResponseWriter, r *http.Request) error {
 			if err := s.st.UpdateMeeting(ctx, q, &m); err != nil {
 				return err
 			}
-			return s.st.Log(ctx, q, user(r).ID, "update", "meeting", id, "edited "+quote(store.MeetingDisplayName(&m, loc)), changes)
+			return s.st.Log(ctx, q, user(r).ID, "update", "meeting", id, store.M("edited “%s”", meetingArg(&m)), changes)
 		})
 		if err != nil {
 			return err
 		}
 	}
-	s.flash(w, "ok", "Saved.")
+	s.flash(w, r, "ok", "Saved.")
 	return redirect(w, r, fmt.Sprintf("/meetings/%d", id))
 }
 
@@ -155,19 +155,21 @@ func (s *Server) deleteMeeting(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.DeleteMeeting(ctx, q, id); err != nil {
 			return err
 		}
-		return s.st.Log(ctx, q, user(r).ID, "delete", "meeting", id, "deleted the meeting "+quote(store.MeetingDisplayName(m, s.cfg.Location)), nil)
+		return s.st.Log(ctx, q, user(r).ID, "delete", "meeting", id, store.M("deleted the meeting “%s”", meetingArg(m)), nil)
 	})
 	if err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Meeting deleted.")
+	s.flash(w, r, "ok", "Meeting deleted.")
 	return redirect(w, r, "/meetings")
 }
 
+// meetingBooksResponse re-renders the meeting's book list for htmx, or
+// redirects back for plain form posts. errMsg is an English key.
 func (s *Server) meetingBooksResponse(w http.ResponseWriter, r *http.Request, id int64, errMsg string) error {
 	if !isHTMX(r) {
 		if errMsg != "" {
-			s.flash(w, "error", errMsg)
+			s.flash(w, r, "error", errMsg)
 		}
 		return redirect(w, r, fmt.Sprintf("/meetings/%d", id))
 	}
@@ -178,6 +180,9 @@ func (s *Server) meetingBooksResponse(w http.ResponseWriter, r *http.Request, id
 	all, err := s.st.BooksForSelect(r.Context())
 	if err != nil {
 		return err
+	}
+	if errMsg != "" {
+		errMsg = tr(r, errMsg)
 	}
 	return ok(w, r, views.MeetingBooks(m, all, errMsg))
 }
@@ -194,23 +199,30 @@ func (s *Server) addMeetingBook(w http.ResponseWriter, r *http.Request) error {
 	}
 	b, err := s.st.GetBook(ctx, formInt64(r, "book_id"))
 	if err != nil {
-		return s.meetingBooksResponse(w, r, id, "Choose a book to add.")
+		return s.meetingBooksResponse(w, r, id, msgChooseBook)
 	}
 	err = s.st.Tx(ctx, func(q store.Querier) error {
 		if err := s.st.AddMeetingBook(ctx, q, id, b.ID, formStr(r, "note"), user(r).ID); err != nil {
 			return err
 		}
 		return s.st.Log(ctx, q, user(r).ID, "update", "meeting", id,
-			"added "+quote(b.Title)+" to "+quote(store.MeetingDisplayName(m, s.cfg.Location)), nil)
+			store.M("added “%s” to “%s”", b.Title, meetingArg(m)), nil)
 	})
 	if errors.Is(err, store.ErrDuplicate) {
-		return s.meetingBooksResponse(w, r, id, "That book is already part of this meeting.")
+		return s.meetingBooksResponse(w, r, id, msgAlreadyInMeeting)
 	}
 	if err != nil {
 		return err
 	}
 	return s.meetingBooksResponse(w, r, id, "")
 }
+
+// Keys passed through meetingBooksResponse (listed with tr so the catalog
+// test sees them).
+var (
+	msgChooseBook       = trKey("Choose a book to add.")
+	msgAlreadyInMeeting = trKey("That book is already part of this meeting.")
+)
 
 func (s *Server) removeMeetingBook(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
@@ -235,7 +247,7 @@ func (s *Server) removeMeetingBook(w http.ResponseWriter, r *http.Request) error
 			return err
 		}
 		return s.st.Log(ctx, q, user(r).ID, "update", "meeting", id,
-			"removed "+quote(b.Title)+" from "+quote(store.MeetingDisplayName(m, s.cfg.Location)), nil)
+			store.M("removed “%s” from “%s”", b.Title, meetingArg(m)), nil)
 	})
 	if err != nil {
 		return err

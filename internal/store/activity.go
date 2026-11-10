@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	"bookclub/internal/i18n"
 )
 
 // Change records one edited field for the history log.
@@ -13,6 +15,15 @@ type Change struct {
 	To    string `json:"to"`
 }
 
+// Msg is a history message: an English format string (also the translation
+// key) plus arguments, so it can be shown in each reader's language.
+type Msg struct {
+	Key  string
+	Args []string
+}
+
+func M(key string, args ...string) Msg { return Msg{Key: key, Args: args} }
+
 type Activity struct {
 	ID          int64
 	UserID      *int64
@@ -20,17 +31,21 @@ type Activity struct {
 	Action      string
 	SubjectType string
 	SubjectID   int64
-	Summary     string
+	Summary     string // English, kept for older entries and direct DB reading
+	MsgKey      string
+	MsgArgs     []string
 	Changes     []Change
 	CreatedAt   time.Time
 }
 
 type activityDetails struct {
 	Changes []Change `json:"changes,omitempty"`
+	Msg     string   `json:"msg,omitempty"`
+	Args    []string `json:"args,omitempty"`
 }
 
 // Diff compares field values and returns the ones that changed.
-// Pass pairs as field name -> [old, new].
+// Pass triples of field name, old value, new value.
 func Diff(fields [][3]string) []Change {
 	var out []Change
 	for _, f := range fields {
@@ -42,8 +57,9 @@ func Diff(fields [][3]string) []Change {
 }
 
 // Log appends an entry to the history. userID may be 0 for system actions.
-func (s *Store) Log(ctx context.Context, q Querier, userID int64, action, subjectType string, subjectID int64, summary string, changes []Change) error {
-	details, _ := json.Marshal(activityDetails{Changes: changes})
+func (s *Store) Log(ctx context.Context, q Querier, userID int64, action, subjectType string, subjectID int64, m Msg, changes []Change) error {
+	details, _ := json.Marshal(activityDetails{Changes: changes, Msg: m.Key, Args: m.Args})
+	summary := i18n.RenderMsg(i18n.EN, m.Key, m.Args)
 	var uid *int64
 	if userID != 0 {
 		uid = &userID
@@ -72,7 +88,7 @@ func (s *Store) queryActivity(ctx context.Context, sql string, args ...any) ([]A
 		}
 		var d activityDetails
 		_ = json.Unmarshal(details, &d)
-		a.Changes = d.Changes
+		a.Changes, a.MsgKey, a.MsgArgs = d.Changes, d.Msg, d.Args
 		out = append(out, a)
 	}
 	return out, rows.Err()

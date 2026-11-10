@@ -11,7 +11,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -39,23 +38,18 @@ func (m Method) Valid() bool {
 	return false
 }
 
-func (m Method) Label() string {
-	switch m {
-	case Single:
-		return "One vote each"
-	case Multi:
-		return "Several votes each"
-	case Points:
-		return "Points to spread"
-	case Ranked:
-		return "Ranked choice"
-	case Informal:
-		return "Informal decision"
-	}
-	return string(m)
+func (m Method) HasBallots() bool { return m != Informal }
+
+// RuleError explains why a ballot was rejected. Format is an English format
+// string; the web layer translates it before showing it.
+type RuleError struct {
+	Format string
+	Args   []any
 }
 
-func (m Method) HasBallots() bool { return m != Informal }
+func (e *RuleError) Error() string { return fmt.Sprintf(e.Format, e.Args...) }
+
+func Errf(format string, args ...any) error { return &RuleError{Format: format, Args: args} }
 
 const (
 	CountIRV   = "irv"
@@ -105,76 +99,6 @@ func (s Settings) Normalize(m Method) Settings {
 	return s
 }
 
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return fmt.Sprintf("%d %s", n, one)
-	}
-	return fmt.Sprintf("%d %s", n, many)
-}
-
-// Describe returns the rules in plain language, shown on every vote page.
-func (s Settings) Describe(m Method) []string {
-	s = s.Normalize(m)
-	var out []string
-	switch m {
-	case Single:
-		out = append(out, "Each member votes for one option. Most votes wins.")
-	case Multi:
-		if s.MaxChoices == 0 {
-			out = append(out, "Each member can vote for as many options as they like (approval voting). Most votes wins.")
-		} else {
-			out = append(out, fmt.Sprintf("Each member can vote for up to %s. Most votes wins.", plural(s.MaxChoices, "option", "options")))
-		}
-	case Points:
-		r := fmt.Sprintf("Each member has %s to spread across the options", plural(s.PointsTotal, "point", "points"))
-		if s.MaxPerOption > 0 {
-			r += fmt.Sprintf(", at most %d on any one option", s.MaxPerOption)
-		}
-		out = append(out, r+". Most points wins.")
-	case Ranked:
-		r := "Each member ranks the options in order of preference"
-		if s.MaxRanks > 0 {
-			r += fmt.Sprintf(" (up to %d)", s.MaxRanks)
-		}
-		out = append(out, r+".")
-		if s.RankedCount == CountBorda {
-			out = append(out, "Counted with points by rank (Borda): with N options, a 1st choice is worth N points, a 2nd choice N−1, and so on. Unranked options get 0. Most points wins.")
-		} else {
-			out = append(out, "Counted by instant runoff: if no option has more than half of the first choices, the option(s) with the fewest are eliminated and those ballots move to their next choice. This repeats until one option has a majority.")
-			if s.Winners > 1 {
-				out = append(out, "For each further pick, the count is re-run from scratch with the earlier winners removed.")
-			}
-		}
-	case Informal:
-		out = append(out, "No ballots. Talk it out (or let someone pick) and record the decision here.")
-	}
-	if s.Winners > 1 {
-		out = append(out, fmt.Sprintf("This vote picks %d options.", s.Winners))
-	}
-	if m.HasBallots() {
-		if s.Secret {
-			out = append(out, "Secret ballots: when voting closes, every ballot is published without names. Each voter gets a receipt code to find their own ballot.")
-		} else {
-			out = append(out, "Open ballots: when voting closes, every ballot is published with the voter's name.")
-		}
-		if s.LiveResults {
-			out = append(out, "Running totals are visible while voting is open.")
-		} else {
-			out = append(out, "Results are hidden until voting closes.")
-		}
-		if s.NoOwnNominations {
-			out = append(out, "You can't vote for options you suggested yourself.")
-		}
-	}
-	if s.MaxNominations > 0 {
-		out = append(out, fmt.Sprintf("Each member can suggest up to %s.", plural(s.MaxNominations, "option", "options")))
-	}
-	if s.LateNominations && m.HasBallots() {
-		out = append(out, "Suggestions can still be added after voting opens.")
-	}
-	return out
-}
-
 // Ballot is one member's vote. Which field is used depends on the method.
 type Ballot struct {
 	Choices []int64       `json:"choices,omitempty"` // single, multi
@@ -190,10 +114,10 @@ func Clean(m Method, s Settings, b Ballot, valid, own map[int64]bool) (Ballot, e
 	s = s.Normalize(m)
 	checkOption := func(id int64) error {
 		if !valid[id] {
-			return errors.New("your ballot refers to an option that isn't part of this vote")
+			return Errf("your ballot refers to an option that isn't part of this vote")
 		}
 		if s.NoOwnNominations && own[id] {
-			return errors.New("you can't vote for an option you suggested")
+			return Errf("you can't vote for an option you suggested")
 		}
 		return nil
 	}
@@ -201,7 +125,7 @@ func Clean(m Method, s Settings, b Ballot, valid, own map[int64]bool) (Ballot, e
 		seen := map[int64]bool{}
 		for _, id := range ids {
 			if seen[id] {
-				return errors.New("the same option appears twice on your ballot")
+				return Errf("the same option appears twice on your ballot")
 			}
 			seen[id] = true
 		}
@@ -211,7 +135,7 @@ func Clean(m Method, s Settings, b Ballot, valid, own map[int64]bool) (Ballot, e
 	switch m {
 	case Single:
 		if len(b.Choices) != 1 {
-			return Ballot{}, errors.New("pick exactly one option")
+			return Ballot{}, Errf("pick exactly one option")
 		}
 		if err := checkOption(b.Choices[0]); err != nil {
 			return Ballot{}, err
@@ -220,10 +144,10 @@ func Clean(m Method, s Settings, b Ballot, valid, own map[int64]bool) (Ballot, e
 
 	case Multi:
 		if len(b.Choices) == 0 {
-			return Ballot{}, errors.New("pick at least one option")
+			return Ballot{}, Errf("pick at least one option")
 		}
 		if s.MaxChoices > 0 && len(b.Choices) > s.MaxChoices {
-			return Ballot{}, fmt.Errorf("you can pick at most %d", s.MaxChoices)
+			return Ballot{}, Errf("you can pick at most %d", s.MaxChoices)
 		}
 		if err := noDupes(b.Choices); err != nil {
 			return Ballot{}, err
@@ -242,7 +166,7 @@ func Clean(m Method, s Settings, b Ballot, valid, own map[int64]bool) (Ballot, e
 		out := map[int64]int{}
 		for id, p := range b.Points {
 			if p < 0 {
-				return Ballot{}, errors.New("points can't be negative")
+				return Ballot{}, Errf("points can't be negative")
 			}
 			if p == 0 {
 				continue
@@ -251,25 +175,25 @@ func Clean(m Method, s Settings, b Ballot, valid, own map[int64]bool) (Ballot, e
 				return Ballot{}, err
 			}
 			if s.MaxPerOption > 0 && p > s.MaxPerOption {
-				return Ballot{}, fmt.Errorf("at most %d points per option", s.MaxPerOption)
+				return Ballot{}, Errf("at most %d points per option", s.MaxPerOption)
 			}
 			total += p
 			out[id] = p
 		}
 		if total == 0 {
-			return Ballot{}, errors.New("give at least one point")
+			return Ballot{}, Errf("give at least one point")
 		}
 		if total > s.PointsTotal {
-			return Ballot{}, fmt.Errorf("you used %d points but only have %d", total, s.PointsTotal)
+			return Ballot{}, Errf("you used %d points but only have %d", total, s.PointsTotal)
 		}
 		return Ballot{Points: out}, nil
 
 	case Ranked:
 		if len(b.Ranking) == 0 {
-			return Ballot{}, errors.New("rank at least one option")
+			return Ballot{}, Errf("rank at least one option")
 		}
 		if s.MaxRanks > 0 && len(b.Ranking) > s.MaxRanks {
-			return Ballot{}, fmt.Errorf("you can rank at most %d options", s.MaxRanks)
+			return Ballot{}, Errf("you can rank at most %d options", s.MaxRanks)
 		}
 		if err := noDupes(b.Ranking); err != nil {
 			return Ballot{}, err
@@ -281,7 +205,7 @@ func Clean(m Method, s Settings, b Ballot, valid, own map[int64]bool) (Ballot, e
 		}
 		return Ballot{Ranking: append([]int64(nil), b.Ranking...)}, nil
 	}
-	return Ballot{}, errors.New("this vote doesn't use ballots")
+	return Ballot{}, Errf("this vote doesn't use ballots")
 }
 
 // Option is a choice in a poll, as far as counting is concerned.
@@ -299,6 +223,15 @@ type Total struct {
 	Tied     bool
 }
 
+// How a round of instant runoff ended.
+const (
+	OutcomeOnlyOneLeft = "only_one_left" // Counts[0] wins by default
+	OutcomeMajority    = "majority"      // Counts[0] has more than half of Active
+	OutcomeNoActive    = "no_active"     // no ballot ranks any remaining option
+	OutcomeAllTied     = "all_tied"      // every remaining option has Lowest
+	OutcomeEliminated  = "eliminated"    // Eliminated (with Lowest each) are out
+)
+
 // Round is one round of an instant-runoff count.
 type Round struct {
 	Number     int
@@ -306,7 +239,24 @@ type Round struct {
 	Active     int     // ballots still counting toward a continuing option
 	Exhausted  int     // ballots with no continuing option left
 	Eliminated []int64
-	Note       string
+	Lowest     int
+	Outcome    string
+}
+
+// Note kinds explain a result in a way the UI can translate.
+const (
+	NoteNoOptions    = "no_options"
+	NoteNoBallots    = "no_ballots"
+	NoteNoneReceived = "none_received" // nobody got any votes/points
+	NoteFewReceived  = "few_received"  // Value options got anything; fewer than seats
+	NoteTie          = "tie"           // Options tied with Value each for the last spot
+	NoteRunoffTie    = "runoff_tie"
+)
+
+type Note struct {
+	Kind    string
+	Value   int
+	Options []int64
 }
 
 // Run is a full instant-runoff count for one seat.
@@ -326,7 +276,7 @@ type Result struct {
 	Runs        []Run   // instant runoff only
 	Winners     []int64
 	Tied        []int64 // options tied for the last remaining spot
-	Notes       []string
+	Notes       []Note
 }
 
 func (r Result) IsWinner(id int64) bool { return contains(r.Winners, id) }
@@ -350,11 +300,11 @@ func Tally(m Method, s Settings, options []Option, ballots []Ballot) Result {
 		return res
 	}
 	if len(options) == 0 {
-		res.Notes = append(res.Notes, "There are no options to count.")
+		res.Notes = append(res.Notes, Note{Kind: NoteNoOptions})
 		return res
 	}
 	if len(ballots) == 0 {
-		res.Notes = append(res.Notes, "No ballots were cast.")
+		res.Notes = append(res.Notes, Note{Kind: NoteNoBallots})
 		return res
 	}
 
@@ -424,7 +374,7 @@ func makeTotals(options []Option, values map[int64]int) []Total {
 func pickTop(res *Result, seats int) {
 	t := res.Totals
 	if len(t) == 0 || t[0].Value == 0 {
-		res.Notes = append(res.Notes, "Nobody received any "+res.Unit+".")
+		res.Notes = append(res.Notes, Note{Kind: NoteNoneReceived})
 		return
 	}
 	if seats > len(t) {
@@ -439,7 +389,7 @@ func pickTop(res *Result, seats int) {
 				res.Winners = append(res.Winners, t[i].OptionID)
 			}
 		}
-		res.Notes = append(res.Notes, fmt.Sprintf("Only %d option(s) received any %s.", len(res.Winners), res.Unit))
+		res.Notes = append(res.Notes, Note{Kind: NoteFewReceived, Value: len(res.Winners)})
 		return
 	}
 	tieAtCutoff := seats < len(t) && t[seats].Value == cutoff
@@ -454,14 +404,7 @@ func pickTop(res *Result, seats int) {
 		}
 	}
 	if tieAtCutoff {
-		names := make([]string, 0, len(res.Tied))
-		for _, x := range t {
-			if x.Tied {
-				names = append(names, x.Label)
-			}
-		}
-		res.Notes = append(res.Notes, fmt.Sprintf("Tie with %d %s each between: %s. Record the decision below once you've settled it.",
-			cutoff, res.Unit, strings.Join(names, ", ")))
+		res.Notes = append(res.Notes, Note{Kind: NoteTie, Value: cutoff, Options: res.Tied})
 	}
 }
 
@@ -481,7 +424,7 @@ func instantRunoff(res *Result, options []Option, ballots []Ballot, seats int) {
 		if run.Winner == 0 {
 			res.Tied = run.Tied
 			if len(run.Tied) > 0 {
-				res.Notes = append(res.Notes, "The count ended in a tie. Record the decision below once you've settled it.")
+				res.Notes = append(res.Notes, Note{Kind: NoteRunoffTie, Options: run.Tied})
 			}
 			return
 		}
@@ -491,11 +434,9 @@ func instantRunoff(res *Result, options []Option, ballots []Ballot, seats int) {
 }
 
 func runIRV(options []Option, ballots []Ballot, excluded map[int64]bool) Run {
-	labels := map[int64]string{}
 	continuing := map[int64]bool{}
 	var conOpts []Option
 	for _, o := range options {
-		labels[o.ID] = o.Label
 		if !excluded[o.ID] {
 			continuing[o.ID] = true
 			conOpts = append(conOpts, o)
@@ -529,7 +470,7 @@ func runIRV(options []Option, ballots []Ballot, excluded map[int64]bool) Run {
 
 		if len(live) == 1 {
 			round.Counts[0].Winner = true
-			round.Note = fmt.Sprintf("%s is the only option left.", round.Counts[0].Label)
+			round.Outcome = OutcomeOnlyOneLeft
 			run.Rounds = append(run.Rounds, round)
 			run.Winner = round.Counts[0].OptionID
 			return run
@@ -539,25 +480,24 @@ func runIRV(options []Option, ballots []Ballot, excluded map[int64]bool) Run {
 				round.Counts[i].Tied = true
 				run.Tied = append(run.Tied, round.Counts[i].OptionID)
 			}
-			round.Note = "No ballot ranks any of the remaining options, so they are tied."
+			round.Outcome = OutcomeNoActive
 			run.Rounds = append(run.Rounds, round)
 			return run
 		}
 		best := round.Counts[0]
 		if best.Value*2 > round.Active {
 			round.Counts[0].Winner = true
-			round.Note = fmt.Sprintf("%s has a majority: %d of %d active ballots.", best.Label, best.Value, round.Active)
+			round.Outcome = OutcomeMajority
 			run.Rounds = append(run.Rounds, round)
 			run.Winner = best.OptionID
 			return run
 		}
 		lowest := round.Counts[len(round.Counts)-1].Value
+		round.Lowest = lowest
 		var out []int64
-		var outNames []string
 		for _, t := range round.Counts {
 			if t.Value == lowest {
 				out = append(out, t.OptionID)
-				outNames = append(outNames, t.Label)
 			}
 		}
 		if len(out) == len(round.Counts) {
@@ -565,16 +505,12 @@ func runIRV(options []Option, ballots []Ballot, excluded map[int64]bool) Run {
 				round.Counts[i].Tied = true
 			}
 			run.Tied = out
-			round.Note = fmt.Sprintf("All remaining options are tied with %d each.", lowest)
+			round.Outcome = OutcomeAllTied
 			run.Rounds = append(run.Rounds, round)
 			return run
 		}
 		round.Eliminated = out
-		if len(out) == 1 {
-			round.Note = fmt.Sprintf("No majority (need more than %d). %s has the fewest (%d) and is eliminated.", round.Active/2, outNames[0], lowest)
-		} else {
-			round.Note = fmt.Sprintf("No majority (need more than %d). %s are tied for fewest (%d) and are all eliminated.", round.Active/2, strings.Join(outNames, ", "), lowest)
-		}
+		round.Outcome = OutcomeEliminated
 		for _, id := range out {
 			delete(continuing, id)
 		}

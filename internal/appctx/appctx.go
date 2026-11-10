@@ -1,10 +1,11 @@
-// Package appctx carries per-request data (current user, CSRF token, flash
-// message) from the HTTP layer to the templates.
+// Package appctx carries per-request data (current user, language, CSRF
+// token, flash message) from the HTTP layer to the templates.
 package appctx
 
 import (
 	"context"
 
+	"bookclub/internal/i18n"
 	"bookclub/internal/store"
 )
 
@@ -15,9 +16,11 @@ type Flash struct {
 
 type Request struct {
 	User     *store.User
+	Lang     i18n.Lang
 	CSRF     string
 	Flash    *Flash
 	Path     string
+	URI      string // path and query of a GET request, for "come back here" links
 	ClubName string
 }
 
@@ -32,5 +35,5 @@ func Get(ctx context.Context) *Request {
 	if r, ok := ctx.Value(key{}).(*Request); ok && r != nil {
 		return r
 	}
-	return &Request{ClubName: "Book Club"}
+	return &Request{ClubName: "Book Club", Lang: i18n.EN}
 }

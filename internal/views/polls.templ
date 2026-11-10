@@ -2,6 +2,7 @@ package views
 
 import "bookclub/internal/store"
 import "bookclub/internal/voting"
+import "context"
 
 type PollsData struct {
 	Open   []*store.Poll
@@ -10,26 +11,26 @@ type PollsData struct {
 }
 
 templ PollsPage(d PollsData) {
-	@Layout("Votes") {
+	@Layout(t(ctx, "Votes")) {
 		<div class="page-head">
-			<h1>Votes</h1>
+			<h1>{ t(ctx, "Votes") }</h1>
 			<div class="actions">
-				<a class="btn btn-primary" href="/polls/new">Start a vote</a>
+				<a class="btn btn-primary" href="/polls/new">{ t(ctx, "Start a vote") }</a>
 			</div>
 		</div>
 		<section class="stack">
-			<h2>Running</h2>
+			<h2>{ t(ctx, "Running") }</h2>
 			if len(d.Open) == 0 {
-				<div class="card empty"><p>No votes running right now.</p></div>
+				<div class="card empty"><p>{ t(ctx, "No votes running right now.") }</p></div>
 			}
 			for _, p := range d.Open {
 				@pollRow(p, d.Voted[p.ID])
 			}
 		</section>
 		<section class="stack">
-			<h2>Finished</h2>
+			<h2>{ t(ctx, "Finished") }</h2>
 			if len(d.Closed) == 0 {
-				<div class="card empty"><p>No finished votes yet.</p></div>
+				<div class="card empty"><p>{ t(ctx, "No finished votes yet.") }</p></div>
 			}
 			for _, p := range d.Closed {
 				@pollRow(p, d.Voted[p.ID])
@@ -41,7 +42,6 @@ templ PollsPage(d PollsData) {
 type PollData struct {
 	ViewerID           int64
 	Poll               *store.Poll
-	Rules              []string
 	Options            []*store.PollOption
 	Members            []*store.User
 	Voted              map[int64]bool
@@ -52,8 +52,6 @@ type PollData struct {
 	CurrentFingerprint string
 	Nominatable        []*store.Book
 	MyNominations      int
-	BallotError        string
-	NominateError      string
 	Comments           CommentsData
 	History            []store.Activity
 }
@@ -64,7 +62,7 @@ func (d PollData) Label(id int64) string {
 			return o.Name()
 		}
 	}
-	return "(removed option)"
+	return "?"
 }
 
 func (d PollData) votedCount() int {
@@ -90,10 +88,8 @@ func (d PollData) canVote() bool {
 }
 
 func (d PollData) ownOption(o *store.PollOption) bool {
-	return d.Poll.Settings.NoOwnNominations && o.NominatedBy != nil && *o.NominatedBy == d.myID()
+	return d.Poll.Settings.NoOwnNominations && o.NominatedBy != nil && *o.NominatedBy == d.ViewerID
 }
-
-func (d PollData) myID() int64 { return d.ViewerID }
 
 func (d PollData) maxRank() int {
 	n := len(d.Options)
@@ -120,35 +116,39 @@ func (d PollData) chosenNames() []string {
 	return out
 }
 
+func (d PollData) formatBallot(b voting.Ballot) string {
+	return voting.FormatBallot(d.Poll.Method, b, d.Label)
+}
+
 templ PollPage(d PollData) {
 	@Layout(d.Poll.Title) {
-		<p class="crumbs"><a href="/polls">Votes</a></p>
+		<p class="crumbs"><a href="/polls">{ t(ctx, "Votes") }</a></p>
 		<div class="page-head">
 			<div>
 				<h1>{ d.Poll.Title }</h1>
 				<p class="lead">
-					<span class={ statusClass(d.Poll) }>{ statusLabel(d.Poll) }</span>
-					{ " " + d.Poll.Method.Label() }
+					<span class={ statusClass(d.Poll) }>{ statusLabel(ctx, d.Poll) }</span>
+					{ " " + methodLabel(ctx, d.Poll.Method) }
 					if d.Poll.MeetingID != nil {
-						{ " · for " }
-						<a href={ url("/meetings/%d", *d.Poll.MeetingID) }>{ pollMeetingName(d.Poll) }</a>
+						{ " · " + t(ctx, "for") + " " }
+						<a href={ url("/meetings/%d", *d.Poll.MeetingID) }>{ pollMeetingName(ctx, d.Poll) }</a>
 					}
 				</p>
 				if d.Poll.Status == store.StatusVoting && d.Poll.ClosesAt != nil {
-					<p class="muted small">Voting closes automatically { fmtDateTime(*d.Poll.ClosesAt) } ({ until(*d.Poll.ClosesAt) }).</p>
+					<p class="muted small">{ tf(ctx, "Voting closes automatically %s (%s).", fmtDateTime(ctx, *d.Poll.ClosesAt), until(ctx, *d.Poll.ClosesAt)) }</p>
 				}
 			</div>
 			<div class="actions">
-				<a class="btn btn-small" href={ url("/polls/%d/edit", d.Poll.ID) }>Edit</a>
+				<a class="btn btn-small" href={ url("/polls/%d/edit", d.Poll.ID) }>{ t(ctx, "Edit") }</a>
 				<form method="post" action={ url("/polls/%d/duplicate", d.Poll.ID) } class="inline"
-					data-confirm="Make a copy of this vote (same rules and options, no ballots)? Handy for a runoff or for trying different rules.">
+					data-confirm={ t(ctx, "Make a copy of this vote (same rules and options, no ballots)? Handy for a runoff or for trying different rules.") }>
 					@csrfField()
-					<button type="submit" class="btn btn-small">Duplicate</button>
+					<button type="submit" class="btn btn-small">{ t(ctx, "Duplicate") }</button>
 				</form>
 				<form method="post" action={ url("/polls/%d/delete", d.Poll.ID) } class="inline"
-					data-confirm="Delete this vote, including all its ballots and comments? This can't be undone.">
+					data-confirm={ t(ctx, "Delete this vote, including all its ballots and comments? This can't be undone.") }>
 					@csrfField()
-					<button type="submit" class="btn btn-small btn-danger">Delete</button>
+					<button type="submit" class="btn btn-small btn-danger">{ t(ctx, "Delete") }</button>
 				</form>
 			</div>
 		</div>
@@ -172,15 +172,13 @@ templ PollPage(d PollData) {
 			</div>
 			<aside class="stack-lg">
 				<section class="card">
-					<h2>Rules</h2>
+					<h2>{ t(ctx, "Rules") }</h2>
 					<ul class="rules">
-						for _, r := range d.Rules {
+						for _, r := range rulesText(ctx, d.Poll) {
 							<li>{ r }</li>
 						}
 					</ul>
-					<p class="muted small">
-						Started by { emptyDash(d.Poll.CreatedByName) } · { fmtDate(d.Poll.CreatedAt) }
-					</p>
+					<p class="muted small">{ tf(ctx, "Started by %s · %s", emptyDash(d.Poll.CreatedByName), fmtDate(ctx, d.Poll.CreatedAt)) }</p>
 				</section>
 				if d.Poll.Method.HasBallots() && d.Poll.Status != store.StatusNominating {
 					@voterStatus(d)
@@ -196,30 +194,30 @@ templ phaseBar(d PollData) {
 	<section class="card phase-bar">
 		<ol class="phases">
 			if d.Poll.Method.HasBallots() {
-				<li class={ templ.Classes(templ.KV("current", d.Poll.Status == store.StatusNominating)) }>Suggestions</li>
-				<li class={ templ.Classes(templ.KV("current", d.Poll.Status == store.StatusVoting)) }>Voting</li>
-				<li class={ templ.Classes(templ.KV("current", d.Poll.Status == store.StatusClosed)) }>Results</li>
+				<li class={ templ.Classes(templ.KV("current", d.Poll.Status == store.StatusNominating)) }>{ t(ctx, "Suggestions") }</li>
+				<li class={ templ.Classes(templ.KV("current", d.Poll.Status == store.StatusVoting)) }>{ t(ctx, "Voting") }</li>
+				<li class={ templ.Classes(templ.KV("current", d.Poll.Status == store.StatusClosed)) }>{ t(ctx, "Results") }</li>
 			} else {
-				<li class={ templ.Classes(templ.KV("current", d.Poll.Status != store.StatusClosed)) }>Discuss</li>
-				<li class={ templ.Classes(templ.KV("current", d.Poll.Status == store.StatusClosed)) }>Decided</li>
+				<li class={ templ.Classes(templ.KV("current", d.Poll.Status != store.StatusClosed)) }>{ t(ctx, "Discuss") }</li>
+				<li class={ templ.Classes(templ.KV("current", d.Poll.Status == store.StatusClosed)) }>{ t(ctx, "Decided") }</li>
 			}
 		</ol>
 		<div class="actions">
 			switch d.Poll.Status {
 				case store.StatusNominating:
 					if d.Poll.Method.HasBallots() {
-						@statusButton(d.Poll.ID, "voting", "Open voting", "btn-primary", "Open voting now? Everyone will be able to cast a ballot.")
+						@statusButton(d.Poll.ID, "voting", t(ctx, "Open voting"), "btn-primary", t(ctx, "Open voting now? Everyone will be able to cast a ballot."))
 					}
 				case store.StatusVoting:
-					@statusButton(d.Poll.ID, "closed", "Close voting", "btn-primary", "Close voting now? Ballots will be counted and published.")
+					@statusButton(d.Poll.ID, "closed", t(ctx, "Close voting"), "btn-primary", t(ctx, "Close voting now? Ballots will be counted and published."))
 					if d.Poll.BallotCount == 0 {
-						@statusButton(d.Poll.ID, "nominating", "Back to suggestions", "", "")
+						@statusButton(d.Poll.ID, "nominating", t(ctx, "Back to suggestions"), "", "")
 					}
 				case store.StatusClosed:
 					if d.Poll.Method.HasBallots() {
-						@statusButton(d.Poll.ID, "voting", "Reopen voting", "", "Reopen voting? Members will be able to change their ballots again, and this will be recorded in the history.")
+						@statusButton(d.Poll.ID, "voting", t(ctx, "Reopen voting"), "", t(ctx, "Reopen voting? Members will be able to change their ballots again, and this will be recorded in the history."))
 					} else {
-						@statusButton(d.Poll.ID, "nominating", "Reopen", "", "Reopen this decision?")
+						@statusButton(d.Poll.ID, "nominating", t(ctx, "Reopen"), "", t(ctx, "Reopen this decision?"))
 					}
 			}
 		</div>
@@ -241,10 +239,10 @@ templ statusButton(pollID int64, status, label, class, confirm string) {
 templ pollOptions(d PollData) {
 	<section class="card" id="poll-options">
 		<div class="section-head">
-			<h2>Options ({ itoa(len(d.Options)) })</h2>
+			<h2>{ tf(ctx, "Options (%d)", len(d.Options)) }</h2>
 		</div>
 		if len(d.Options) == 0 {
-			<p class="muted">Nothing suggested yet.</p>
+			<p class="muted">{ t(ctx, "Nothing suggested yet.") }</p>
 		} else {
 			<ul class="option-list">
 				for _, o := range d.Options {
@@ -266,51 +264,48 @@ templ pollOptions(d PollData) {
 								<blockquote class="pitch">{ o.Pitch }</blockquote>
 							}
 							<div class="muted small">
-								Suggested by { emptyDash(o.NominatedByName) }
+								{ tf(ctx, "Suggested by %s", emptyDash(o.NominatedByName)) }
 								if o.Chosen {
-									<span class="badge badge-ok">Chosen</span>
+									<span class="badge badge-ok">{ t(ctx, "Chosen") }</span>
 								}
 							</div>
 						</div>
 						if d.Poll.Status != store.StatusClosed {
 							<form method="post" action={ url("/polls/%d/options/%d/remove", d.Poll.ID, o.ID) } class="inline"
-								data-confirm={ "Remove “" + o.Name() + "” from this vote?" }>
+								data-confirm={ tf(ctx, "Remove %s from this vote?", q(ctx, o.Name())) }>
 								@csrfField()
-								<button type="submit" class="linkbtn small">Remove</button>
+								<button type="submit" class="linkbtn small">{ t(ctx, "Remove") }</button>
 							</form>
 						}
 					</li>
 				}
 			</ul>
 		}
-		if d.NominateError != "" {
-			<p class="field-error">{ d.NominateError }</p>
-		}
 		if d.canNominate() {
 			@nominateForm(d)
 		} else if d.Poll.AcceptsNominations() {
-			<p class="muted small">You've used all { itoa(d.Poll.Settings.MaxNominations) } of your suggestions.</p>
+			<p class="muted small">{ tf(ctx, "You've used all %d of your suggestions.", d.Poll.Settings.MaxNominations) }</p>
 		}
 	</section>
 }
 
 templ nominateForm(d PollData) {
 	<details class="add-panel" open?={ len(d.Options) == 0 }>
-		<summary>Suggest something</summary>
+		<summary>{ t(ctx, "Suggest something") }</summary>
 		<form method="post" action={ url("/polls/%d/options", d.Poll.ID) } class="stack">
 			@csrfField()
 			<label>
-				A book from the library
+				{ t(ctx, "A book from the library") }
 				<select name="book_id">
-					<option value="">Choose a book…</option>
-					<optgroup label="Want to read">
+					<option value="">{ t(ctx, "Choose a book…") }</option>
+					<optgroup label={ t(ctx, "Want to read") }>
 						for _, b := range d.Nominatable {
 							if b.OnWishlist {
 								<option value={ itoa(b.ID) }>{ b.Title }{ authorSuffix(b) }</option>
 							}
 						}
 					</optgroup>
-					<optgroup label="Rest of the library">
+					<optgroup label={ t(ctx, "Rest of the library") }>
 						for _, b := range d.Nominatable {
 							if !b.OnWishlist {
 								<option value={ itoa(b.ID) }>{ b.Title }{ authorSuffix(b) }</option>
@@ -319,18 +314,18 @@ templ nominateForm(d PollData) {
 					</optgroup>
 				</select>
 				<span class="hint">
-					Not in the library yet? <a href={ url("/books/new?nominate=%d", d.Poll.ID) }>Add a new book and suggest it</a>.
+					{ t(ctx, "Not in the library yet?") } <a href={ url("/books/new?nominate=%d", d.Poll.ID) }>{ t(ctx, "Add a new book and suggest it") }</a>.
 				</span>
 			</label>
 			<label>
-				…or something else (free text)
-				<input type="text" name="label" maxlength="200" placeholder="e.g. a theme, a genre, a date"/>
+				{ t(ctx, "…or something else (free text)") }
+				<input type="text" name="label" maxlength="200" placeholder={ t(ctx, "e.g. a theme, a genre, a date") }/>
 			</label>
 			<label>
-				Your pitch (optional)
-				<textarea name="pitch" rows="2" maxlength="2000" placeholder="Why should we pick this?"></textarea>
+				{ t(ctx, "Your pitch (optional)") }
+				<textarea name="pitch" rows="2" maxlength="2000" placeholder={ t(ctx, "Why should we pick this?") }></textarea>
 			</label>
-			<div><button type="submit" class="btn btn-small btn-primary">Suggest</button></div>
+			<div><button type="submit" class="btn btn-small btn-primary">{ t(ctx, "Suggest") }</button></div>
 		</form>
 	</details>
 }
@@ -339,31 +334,28 @@ templ ballotForm(d PollData) {
 	{{ rules := d.Poll.Rules() }}
 	<section class="card ballot" id="ballot">
 		<div class="section-head">
-			<h2>Your ballot</h2>
+			<h2>{ t(ctx, "Your ballot") }</h2>
 			if d.MyBallot != nil {
-				<span class="badge badge-ok">Counted</span>
+				<span class="badge badge-ok">{ t(ctx, "Counted") }</span>
 			}
 		</div>
 		if d.MyBallot != nil {
 			<div class="receipt">
 				<div>
-					Your receipt code: <code class="receipt-code">{ d.MyBallot.Receipt }</code>
+					{ t(ctx, "Your receipt code:") } <code class="receipt-code">{ d.MyBallot.Receipt }</code>
 				</div>
 				<div class="small muted">
 					if rules.Secret {
-						Ballots are published without names when voting closes. Look for this code in the list to check your ballot was counted as you cast it.
+						{ t(ctx, "Ballots are published without names when voting closes. Look for this code in the list to check your ballot was counted as you cast it.") }
 					} else {
-						You can change your ballot until voting closes.
+						{ t(ctx, "You can change your ballot until voting closes.") }
 					}
 				</div>
-				<div class="small">Current ballot: { voting.FormatBallot(d.Poll.Method, d.MyBallot.Data, d.Label) }</div>
+				<div class="small">{ tf(ctx, "Current ballot: %s", d.formatBallot(d.MyBallot.Data)) }</div>
 			</div>
 		}
-		if d.BallotError != "" {
-			<div class="flash flash-error">{ d.BallotError }</div>
-		}
 		if len(d.Options) == 0 {
-			<p class="muted">There's nothing to vote on yet.</p>
+			<p class="muted">{ t(ctx, "There's nothing to vote on yet.") }</p>
 		} else {
 			<form method="post" action={ url("/polls/%d/ballot", d.Poll.ID) } class="stack" data-ballot={ string(d.Poll.Method) }
 				data-max-choices={ itoa(rules.MaxChoices) } data-points-total={ itoa(rules.PointsTotal) }>
@@ -371,7 +363,7 @@ templ ballotForm(d PollData) {
 				switch d.Poll.Method {
 					case voting.Single:
 						<fieldset class="choices">
-							<legend class="sr-only">Pick one</legend>
+							<legend class="sr-only">{ t(ctx, "Pick one") }</legend>
 							for _, o := range d.Options {
 								<label class={ templ.Classes("choice", templ.KV("disabled", d.ownOption(o))) }>
 									<input type="radio" name="choice" value={ itoa(o.ID) } checked?={ choiceIn(d.MyBallot, o.ID) } disabled?={ d.ownOption(o) } required/>
@@ -383,9 +375,9 @@ templ ballotForm(d PollData) {
 						<fieldset class="choices">
 							<legend class="small muted">
 								if rules.MaxChoices > 0 {
-									Pick up to { itoa(rules.MaxChoices) }.
+									{ tf(ctx, "Pick up to %d.", rules.MaxChoices) }
 								} else {
-									Pick as many as you like.
+									{ t(ctx, "Pick as many as you like.") }
 								}
 							</legend>
 							for _, o := range d.Options {
@@ -398,9 +390,10 @@ templ ballotForm(d PollData) {
 					case voting.Points:
 						<fieldset class="choices">
 							<legend class="small muted">
-								Spread up to { itoa(rules.PointsTotal) } points.
 								if rules.MaxPerOption > 0 {
-									{ " At most " + itoa(rules.MaxPerOption) + " per option." }
+									{ tf(ctx, "Spread up to %d points. At most %d per option.", rules.PointsTotal, rules.MaxPerOption) }
+								} else {
+									{ tf(ctx, "Spread up to %d points.", rules.PointsTotal) }
 								}
 								<strong class="points-left" data-points-left aria-live="polite"></strong>
 							</legend>
@@ -420,19 +413,19 @@ templ ballotForm(d PollData) {
 					case voting.Ranked:
 						<fieldset class="choices">
 							<legend class="small muted">
-								Give your favourite rank 1, your next favourite 2, and so on.
+								{ t(ctx, "Give your favourite rank 1, your next favourite 2, and so on.") }
 								if rules.MaxRanks > 0 && rules.MaxRanks < len(d.Options) {
-									{ " Rank up to " + itoa(rules.MaxRanks) + "." }
+									{ " " + tf(ctx, "Rank up to %d.", rules.MaxRanks) }
 								} else {
-									{ " You don't have to rank everything." }
+									{ " " + t(ctx, "You don't have to rank everything.") }
 								}
 							</legend>
 							for _, o := range d.Options {
 								<label class={ templ.Classes("choice", "choice-rank", templ.KV("disabled", d.ownOption(o))) }>
-									<select name={ "rank_" + itoa(o.ID) } disabled?={ d.ownOption(o) } data-rank>
+									<select name={ "rank_" + itoa(o.ID) } disabled?={ d.ownOption(o) } data-rank aria-label={ tf(ctx, "Rank for %s", o.Name()) }>
 										<option value="">—</option>
 										for _, n := range seq(d.maxRank()) {
-											<option value={ itoa(n) } selected?={ rankOf(d.MyBallot, o.ID) == n }>{ ordinal(n) }</option>
+											<option value={ itoa(n) } selected?={ rankOf(d.MyBallot, o.ID) == n }>{ ordinal(ctx, n) }</option>
 										}
 									</select>
 									@optionName(d, o)
@@ -443,17 +436,17 @@ templ ballotForm(d PollData) {
 				<div class="actions">
 					<button type="submit" class="btn btn-primary">
 						if d.MyBallot != nil {
-							Update my ballot
+							{ t(ctx, "Update my ballot") }
 						} else {
-							Cast my ballot
+							{ t(ctx, "Cast my ballot") }
 						}
 					</button>
 				</div>
 			</form>
 			if d.MyBallot != nil {
-				<form method="post" action={ url("/polls/%d/ballot/withdraw", d.Poll.ID) } class="inline" data-confirm="Withdraw your ballot? You can vote again while voting is open.">
+				<form method="post" action={ url("/polls/%d/ballot/withdraw", d.Poll.ID) } class="inline" data-confirm={ t(ctx, "Withdraw your ballot? You can vote again while voting is open.") }>
 					@csrfField()
-					<button type="submit" class="linkbtn small">Withdraw my ballot</button>
+					<button type="submit" class="linkbtn small">{ t(ctx, "Withdraw my ballot") }</button>
 				</form>
 			}
 		}
@@ -467,15 +460,15 @@ templ optionName(d PollData, o *store.PollOption) {
 			<span class="muted small">{ " " + o.Book.Authors }</span>
 		}
 		if d.ownOption(o) {
-			<span class="muted small">(your suggestion)</span>
+			<span class="muted small">{ t(ctx, "(your suggestion)") }</span>
 		}
 	</span>
 }
 
 templ voterStatus(d PollData) {
 	<section class="card">
-		<h2>Who has voted</h2>
-		<p><strong>{ itoa(d.votedCount()) }</strong> of { itoa(len(d.Members)) } members · { plural(d.Poll.BallotCount, "ballot", "ballots") } in total</p>
+		<h2>{ t(ctx, "Who has voted") }</h2>
+		<p>{ tf(ctx, "%d of %d members", d.votedCount(), len(d.Members)) } · { tn(ctx, d.Poll.BallotCount, "%d ballot in total", "%d ballots in total") }</p>
 		<ul class="voter-list">
 			for _, m := range d.Members {
 				<li class={ templ.Classes(templ.KV("voted", d.Voted[m.ID])) }>
@@ -487,15 +480,15 @@ templ voterStatus(d PollData) {
 					{ m.DisplayName }
 					<span class="sr-only">
 						if d.Voted[m.ID] {
-							has voted
+							{ t(ctx, "has voted") }
 						} else {
-							hasn't voted
+							{ t(ctx, "hasn't voted") }
 						}
 					</span>
 				</li>
 			}
 		</ul>
-		<p class="muted small">Who voted is always visible, so anyone can check the number of ballots matches.</p>
+		<p class="muted small">{ t(ctx, "Who voted is always visible, so anyone can check the number of ballots matches.") }</p>
 	</section>
 }
 
@@ -504,61 +497,55 @@ templ results(d PollData) {
 		<div class="section-head">
 			<h2>
 				if d.Poll.Status == store.StatusClosed {
-					Results
+					{ t(ctx, "Results") }
 				} else {
-					Running totals
+					{ t(ctx, "Running totals") }
 				}
 			</h2>
-			<span class="muted small">{ plural(d.Result.BallotCount, "ballot", "ballots") }</span>
+			<span class="muted small">{ tn(ctx, d.Result.BallotCount, "%d ballot", "%d ballots") }</span>
 		</div>
 		if len(d.Result.Winners) > 0 {
 			<p class="winner-line">
 				if len(d.Result.Winners) == 1 {
-					Winner:
+					{ t(ctx, "Winner:") }
 				} else {
-					Winners:
+					{ t(ctx, "Winners:") }
 				}
 				for i, id := range d.Result.Winners {
 					if i > 0 {
 						{ ", " }
+					} else {
+						{ " " }
 					}
 					<strong>{ d.Label(id) }</strong>
 				}
 			</p>
 		}
 		for _, n := range d.Result.Notes {
-			<p class="note">{ n }</p>
+			<p class="note">{ noteText(ctx, d, n) }</p>
 		}
 		if len(d.Result.Runs) > 0 {
 			for _, run := range d.Result.Runs {
 				if len(d.Result.Runs) > 1 || d.Poll.Rules().Winners > 1 {
-					<h3>{ ordinal(run.Seat) } pick</h3>
+					<h3>{ tf(ctx, "Pick %s", ordinal(ctx, run.Seat)) }</h3>
 					if len(run.Excluded) > 0 {
-						<p class="muted small">
-							Counted without:
-							for i, id := range run.Excluded {
-								if i > 0 {
-									{ ", " }
-								}
-								{ d.Label(id) }
-							}
-						</p>
+						<p class="muted small">{ tf(ctx, "Counted without: %s", d.labels(ctx, run.Excluded)) }</p>
 					}
 				}
 				<ol class="rounds">
 					for _, r := range run.Rounds {
 						<li class="round">
 							<div class="round-head">
-								<strong>Round { itoa(r.Number) }</strong>
+								<strong>{ tf(ctx, "Round %d", r.Number) }</strong>
 								<span class="muted small">
-									{ plural(r.Active, "active ballot", "active ballots") }
+									{ tn(ctx, r.Active, "%d active ballot", "%d active ballots") }
 									if r.Exhausted > 0 {
-										{ " · " + itoa(r.Exhausted) + " exhausted (no remaining choices)" }
+										{ " · " + tn(ctx, r.Exhausted, "%d exhausted (no remaining choices)", "%d exhausted (no remaining choices)") }
 									}
 								</span>
 							</div>
 							@totalsTable(r.Counts, r.Eliminated, "votes")
-							<p class="small">{ r.Note }</p>
+							<p class="small">{ roundText(ctx, d, r) }</p>
 						</li>
 					}
 				</ol>
@@ -573,22 +560,22 @@ templ totalsTable(ts []voting.Total, eliminated []int64, units string) {
 	{{ max := maxValue(ts) }}
 	<table class="totals">
 		<tbody>
-			for _, t := range ts {
-				<tr class={ templ.Classes(templ.KV("winner", t.Winner), templ.KV("tied", t.Tied), templ.KV("eliminated", containsID(eliminated, t.OptionID))) }>
+			for _, tot := range ts {
+				<tr class={ templ.Classes(templ.KV("winner", tot.Winner), templ.KV("tied", tot.Tied), templ.KV("eliminated", containsID(eliminated, tot.OptionID))) }>
 					<th scope="row">
-						{ t.Label }
-						if t.Winner {
-							<span class="badge badge-ok">Winner</span>
+						{ tot.Label }
+						if tot.Winner {
+							<span class="badge badge-ok">{ t(ctx, "Winner") }</span>
 						}
-						if t.Tied {
-							<span class="badge badge-attn">Tied</span>
+						if tot.Tied {
+							<span class="badge badge-attn">{ t(ctx, "Tied") }</span>
 						}
-						if containsID(eliminated, t.OptionID) {
-							<span class="badge badge-muted">Eliminated</span>
+						if containsID(eliminated, tot.OptionID) {
+							<span class="badge badge-muted">{ t(ctx, "Eliminated") }</span>
 						}
 					</th>
-					<td class="bar"><progress value={ itoa(t.Value) } max={ itoa(maxOne(max)) }></progress></td>
-					<td class="num">{ itoa(t.Value) } <span class="muted small">{ unit(t.Value, units) }</span></td>
+					<td class="bar"><progress value={ itoa(tot.Value) } max={ itoa(maxOne(max)) }></progress></td>
+					<td class="num">{ unitCount(ctx, tot.Value, units) }</td>
 				</tr>
 			}
 		</tbody>
@@ -615,32 +602,32 @@ templ publishedBallots(d PollData) {
 	{{ rules := d.Poll.Rules() }}
 	<section class="card" id="ballots">
 		<div class="section-head">
-			<h2>All ballots ({ itoa(len(d.Ballots)) })</h2>
+			<h2>{ tf(ctx, "All ballots (%d)", len(d.Ballots)) }</h2>
 			<span class="small">
 				<a href={ url("/polls/%d/ballots.csv", d.Poll.ID) }>CSV</a> ·
 				<a href={ url("/polls/%d/ballots.json", d.Poll.ID) }>JSON</a>
 			</span>
 		</div>
 		if len(d.Ballots) == 0 {
-			<p class="muted">No ballots were cast.</p>
+			<p class="muted">{ t(ctx, "No ballots were cast.") }</p>
 		} else {
 			<p class="muted small">
 				if rules.Secret {
-					Secret vote: ballots are listed by receipt code, without names, sorted by code.
+					{ t(ctx, "Secret vote: ballots are listed by receipt code, without names, sorted by code.") }
 				} else {
-					Open vote: every ballot is shown with the voter's name.
+					{ t(ctx, "Open vote: every ballot is shown with the voter's name.") }
 				}
-				Anyone can recount these by hand or with the download.
+				{ " " + t(ctx, "Anyone can recount these by hand or with the download.") }
 			</p>
 			<div class="table-scroll">
 				<table class="ballot-table">
 					<thead>
 						<tr>
-							<th scope="col">Receipt</th>
+							<th scope="col">{ t(ctx, "Receipt") }</th>
 							if !rules.Secret {
-								<th scope="col">Voter</th>
+								<th scope="col">{ t(ctx, "Voter") }</th>
 							}
-							<th scope="col">Ballot</th>
+							<th scope="col">{ t(ctx, "Ballot") }</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -651,9 +638,9 @@ templ publishedBallots(d PollData) {
 									<td>{ b.UserName }</td>
 								}
 								<td>
-									{ voting.FormatBallot(d.Poll.Method, b.Data, d.Label) }
+									{ d.formatBallot(b.Data) }
 									if d.MyBallot != nil && d.MyBallot.ID == b.ID {
-										<span class="badge">yours</span>
+										<span class="badge">{ t(ctx, "yours") }</span>
 									}
 								</td>
 							</tr>
@@ -664,17 +651,17 @@ templ publishedBallots(d PollData) {
 		}
 		<div class="fingerprint">
 			if d.Poll.Fingerprint == "" {
-				<p class="muted small">No fingerprint was recorded for this vote.</p>
+				<p class="muted small">{ t(ctx, "No fingerprint was recorded for this vote.") }</p>
 			} else if d.Poll.Fingerprint == d.CurrentFingerprint {
 				<p class="ok small">
-					✓ Ballots are unchanged since voting closed { fmtDateTime(*d.Poll.ClosedAt) }.
+					{ "✓ " + tf(ctx, "Ballots are unchanged since voting closed %s.", fmtDateTime(ctx, *d.Poll.ClosedAt)) }
 				</p>
-				<p class="muted small">Fingerprint (SHA-256): <code class="hash">{ d.Poll.Fingerprint }</code></p>
+				<p class="muted small">{ t(ctx, "Fingerprint (SHA-256):") } <code class="hash">{ d.Poll.Fingerprint }</code></p>
 			} else {
 				<p class="field-error">
-					⚠ The ballots or options no longer match the fingerprint recorded when voting closed. Something was changed directly in the database.
+					{ "⚠ " + t(ctx, "The ballots or options no longer match the fingerprint recorded when voting closed. Something was changed directly in the database.") }
 				</p>
-				<p class="muted small">Recorded: <code class="hash">{ d.Poll.Fingerprint }</code><br/>Now: <code class="hash">{ d.CurrentFingerprint }</code></p>
+				<p class="muted small">{ t(ctx, "Recorded:") } <code class="hash">{ d.Poll.Fingerprint }</code><br/>{ t(ctx, "Now:") } <code class="hash">{ d.CurrentFingerprint }</code></p>
 			}
 		</div>
 	</section>
@@ -682,7 +669,7 @@ templ publishedBallots(d PollData) {
 
 templ decision(d PollData) {
 	<section class="card" id="decision">
-		<h2>Decision</h2>
+		<h2>{ t(ctx, "Decision") }</h2>
 		if d.Poll.DecidedAt != nil {
 			<div class="decision">
 				if names := d.chosenNames(); len(names) > 0 {
@@ -695,29 +682,29 @@ templ decision(d PollData) {
 						}
 					</p>
 				} else {
-					<p>Nothing was chosen.</p>
+					<p>{ t(ctx, "Nothing was chosen.") }</p>
 				}
 				@multiline(d.Poll.DecisionNote)
-				<p class="muted small">Recorded by { emptyDash(d.Poll.DecidedByName) } · { fmtDateTime(*d.Poll.DecidedAt) }</p>
+				<p class="muted small">{ tf(ctx, "Recorded by %s · %s", emptyDash(d.Poll.DecidedByName), fmtDateTime(ctx, *d.Poll.DecidedAt)) }</p>
 			</div>
 		} else if d.Poll.Method.HasBallots() {
-			<p class="muted small">The count above is the club's guide. Record what you actually decided — usually the winner, but you might settle a tie, pick two, or change your minds.</p>
+			<p class="muted small">{ t(ctx, "The count above is the club's guide. Record what you actually decided — usually the winner, but you might settle a tie, pick two, or change your minds.") }</p>
 		} else {
-			<p class="muted small">Talk it over, then record what you picked.</p>
+			<p class="muted small">{ t(ctx, "Talk it over, then record what you picked.") }</p>
 		}
 		if len(d.Options) > 0 {
 			<details class="add-panel" open?={ d.Poll.DecidedAt == nil }>
 				<summary>
 					if d.Poll.DecidedAt != nil {
-						Change the decision
+						{ t(ctx, "Change the decision") }
 					} else {
-						Record the decision
+						{ t(ctx, "Record the decision") }
 					}
 				</summary>
 				<form method="post" action={ url("/polls/%d/decision", d.Poll.ID) } class="stack">
 					@csrfField()
 					<fieldset class="choices">
-						<legend class="small muted">What did you pick?</legend>
+						<legend class="small muted">{ t(ctx, "What did you pick?") }</legend>
 						for _, o := range d.Options {
 							<label class="choice">
 								<input type="checkbox" name="chosen" value={ itoa(o.ID) } checked?={ d.defaultChosen(o) }/>
@@ -726,20 +713,20 @@ templ decision(d PollData) {
 						}
 					</fieldset>
 					<label>
-						Note (optional)
-						<textarea name="note" rows="2" maxlength="5000" placeholder="e.g. tie broken by coin toss; reading both">{ d.Poll.DecisionNote }</textarea>
+						{ t(ctx, "Note (optional)") }
+						<textarea name="note" rows="2" maxlength="5000" placeholder={ t(ctx, "e.g. tie broken by coin toss; reading both") }>{ d.Poll.DecisionNote }</textarea>
 					</label>
 					if d.Poll.MeetingID != nil {
 						<label class="check">
 							<input type="checkbox" name="add_to_meeting" value="1" checked/>
-							{ "Add chosen books to " + pollMeetingName(d.Poll) }
+							{ tf(ctx, "Add chosen books to %s", pollMeetingName(ctx, d.Poll)) }
 						</label>
 					}
 					<label class="check">
 						<input type="checkbox" name="off_wishlist" value="1" checked/>
-						Take chosen books off the want-to-read list
+						{ t(ctx, "Take chosen books off the want-to-read list") }
 					</label>
-					<div><button type="submit" class="btn btn-primary btn-small">Save decision</button></div>
+					<div><button type="submit" class="btn btn-primary btn-small">{ t(ctx, "Save decision") }</button></div>
 				</form>
 			</details>
 		}
@@ -758,8 +745,8 @@ type PollFormData struct {
 
 templ PollFormPage(d PollFormData) {
 	{{ s := d.Poll.Settings }}
-	@Layout(pollFormTitle(d.IsNew)) {
-		<div class="page-head"><h1>{ pollFormTitle(d.IsNew) }</h1></div>
+	@Layout(pollFormTitle(ctx, d.IsNew)) {
+		<div class="page-head"><h1>{ pollFormTitle(ctx, d.IsNew) }</h1></div>
 		<form method="post" class="stack-lg poll-form"
 			if d.IsNew {
 				action="/polls"
@@ -770,118 +757,118 @@ templ PollFormPage(d PollFormData) {
 			@csrfField()
 			<section class="card stack">
 				<label>
-					What are you voting on?
-					<input type="text" name="title" value={ d.Poll.Title } required maxlength="200" placeholder="e.g. December book"/>
+					{ t(ctx, "What are you voting on?") }
+					<input type="text" name="title" value={ d.Poll.Title } required maxlength="200" placeholder={ t(ctx, "e.g. December book") }/>
 					@fieldError(d.Errors, "title")
 				</label>
 				<label>
-					Details (optional)
-					<textarea name="description" rows="3" maxlength="10000" placeholder="Theme, constraints, anything people should know">{ d.Poll.Description }</textarea>
+					{ t(ctx, "Details (optional)") }
+					<textarea name="description" rows="3" maxlength="10000" placeholder={ t(ctx, "Theme, constraints, anything people should know") }>{ d.Poll.Description }</textarea>
 				</label>
 				<label>
-					For a meeting (optional)
+					{ t(ctx, "For a meeting (optional)") }
 					<select name="meeting_id">
-						<option value="">No particular meeting</option>
+						<option value="">{ t(ctx, "No particular meeting") }</option>
 						for _, m := range d.Meetings {
-							<option value={ itoa(m.ID) } selected?={ d.Poll.MeetingID != nil && *d.Poll.MeetingID == m.ID }>{ meetingName(m) } — { fmtMeetingTime(m.StartsAt) }</option>
+							<option value={ itoa(m.ID) } selected?={ d.Poll.MeetingID != nil && *d.Poll.MeetingID == m.ID }>{ meetingName(ctx, m) } — { fmtMeetingTime(ctx, m.StartsAt) }</option>
 						}
 					</select>
 				</label>
 			</section>
 			<section class="card stack">
-				<h2>How do you want to decide?</h2>
+				<h2>{ t(ctx, "How do you want to decide?") }</h2>
 				if d.Locked {
-					<div class="flash flash-error">Ballots have been cast, so the voting rules are locked to keep the count fair. Use “Duplicate” on the vote page to start a copy with different rules.</div>
+					<div class="flash flash-error">{ t(ctx, "Ballots have been cast, so the voting rules are locked to keep the count fair. Use “Duplicate” on the vote page to start a copy with different rules.") }</div>
 				}
 				<fieldset class="method-picker" disabled?={ d.Locked }>
-					<legend class="sr-only">Voting method</legend>
+					<legend class="sr-only">{ t(ctx, "Voting method") }</legend>
 					for _, m := range methodOptions() {
 						<label class="method-option">
 							<input type="radio" name="method" value={ string(m) } checked?={ d.Poll.Method == m } required data-method-radio/>
 							<span>
-								<strong>{ m.Label() }</strong>
-								<span class="muted small">{ methodHint(m) }</span>
+								<strong>{ methodLabel(ctx, m) }</strong>
+								<span class="muted small">{ methodHint(ctx, m) }</span>
 							</span>
 						</label>
 					}
 				</fieldset>
 				@fieldError(d.Errors, "method")
 				<fieldset class="method-panel" data-method-panel="multi" disabled?={ d.Locked }>
-					<legend>Several votes</legend>
+					<legend>{ methodLabel(ctx, voting.Multi) }</legend>
 					<label>
-						Votes per member
-						<input type="number" name="max_choices" value={ intOrBlank(s.MaxChoices) } min="1" max="100" placeholder="Unlimited"/>
-						<span class="hint">Leave empty for approval voting: vote for every option you'd be happy with.</span>
+						{ t(ctx, "Votes per member") }
+						<input type="number" name="max_choices" value={ intOrBlank(s.MaxChoices) } min="1" max="100" placeholder={ t(ctx, "Unlimited") }/>
+						<span class="hint">{ t(ctx, "Leave empty for approval voting: vote for every option you'd be happy with.") }</span>
 					</label>
 				</fieldset>
 				<fieldset class="method-panel" data-method-panel="points" disabled?={ d.Locked }>
-					<legend>Points</legend>
+					<legend>{ methodLabel(ctx, voting.Points) }</legend>
 					<div class="grid-2">
 						<label>
-							Points per member
+							{ t(ctx, "Points per member") }
 							<input type="number" name="points_total" value={ intOrBlank(s.PointsTotal) } min="1" max="1000" placeholder="10"/>
 						</label>
 						<label>
-							Max points on one option
-							<input type="number" name="max_per_option" value={ intOrBlank(s.MaxPerOption) } min="1" max="1000" placeholder="No limit"/>
+							{ t(ctx, "Max points on one option") }
+							<input type="number" name="max_per_option" value={ intOrBlank(s.MaxPerOption) } min="1" max="1000" placeholder={ t(ctx, "No limit") }/>
 						</label>
 					</div>
 				</fieldset>
 				<fieldset class="method-panel" data-method-panel="ranked" disabled?={ d.Locked }>
-					<legend>Ranked choice</legend>
+					<legend>{ methodLabel(ctx, voting.Ranked) }</legend>
 					<label class="check">
 						<input type="radio" name="ranked_count" value="irv" checked?={ s.RankedCount != voting.CountBorda }/>
-						<span><strong>Instant runoff</strong> — eliminate the least popular, move their votes on, repeat until someone has a majority.</span>
+						<span><strong>{ t(ctx, "Instant runoff") }</strong> — { t(ctx, "eliminate the least popular, move their votes on, repeat until someone has a majority.") }</span>
 					</label>
 					<label class="check">
 						<input type="radio" name="ranked_count" value="borda" checked?={ s.RankedCount == voting.CountBorda }/>
-						<span><strong>Points by rank (Borda)</strong> — higher ranks earn more points; most points wins. Favours broadly liked options.</span>
+						<span><strong>{ t(ctx, "Points by rank (Borda)") }</strong> — { t(ctx, "higher ranks earn more points; most points wins. Favours broadly liked options.") }</span>
 					</label>
 					<label>
-						Max options to rank
-						<input type="number" name="max_ranks" value={ intOrBlank(s.MaxRanks) } min="1" max="100" placeholder="No limit"/>
+						{ t(ctx, "Max options to rank") }
+						<input type="number" name="max_ranks" value={ intOrBlank(s.MaxRanks) } min="1" max="100" placeholder={ t(ctx, "No limit") }/>
 					</label>
 				</fieldset>
 			</section>
 			<section class="card stack">
-				<h2>Options</h2>
+				<h2>{ t(ctx, "Options") }</h2>
 				<fieldset disabled?={ d.Locked } class="stack">
 					<div class="grid-2">
 						<label>
-							How many to pick
+							{ t(ctx, "How many to pick") }
 							<input type="number" name="winners" value={ itoa(maxOne(s.Winners)) } min="1" max="20"/>
-							<span class="hint">e.g. 2 if you're choosing books for the next two meetings.</span>
+							<span class="hint">{ t(ctx, "e.g. 2 if you're choosing books for the next two meetings.") }</span>
 						</label>
 						<label>
-							Suggestions per member
-							<input type="number" name="max_nominations" value={ intOrBlank(s.MaxNominations) } min="1" max="100" placeholder="Unlimited"/>
+							{ t(ctx, "Suggestions per member") }
+							<input type="number" name="max_nominations" value={ intOrBlank(s.MaxNominations) } min="1" max="100" placeholder={ t(ctx, "Unlimited") }/>
 						</label>
 					</div>
 					<div class="radio-row">
 						<label class="check">
 							<input type="radio" name="secret" value="0" checked?={ !s.Secret }/>
-							<span><strong>Open ballots</strong> — published with names when voting closes</span>
+							<span><strong>{ t(ctx, "Open ballots") }</strong> — { t(ctx, "published with names when voting closes") }</span>
 						</label>
 						<label class="check">
 							<input type="radio" name="secret" value="1" checked?={ s.Secret }/>
-							<span><strong>Secret ballots</strong> — published without names; each voter gets a receipt code</span>
+							<span><strong>{ t(ctx, "Secret ballots") }</strong> — { t(ctx, "published without names; each voter gets a receipt code") }</span>
 						</label>
 					</div>
 					<label class="check">
 						<input type="checkbox" name="live_results" value="1" checked?={ s.LiveResults }/>
-						Show running totals while voting is open
+						{ t(ctx, "Show running totals while voting is open") }
 					</label>
 					<label class="check">
 						<input type="checkbox" name="late_nominations" value="1" checked?={ s.LateNominations }/>
-						Allow new suggestions after voting opens
+						{ t(ctx, "Allow new suggestions after voting opens") }
 					</label>
 					<label class="check">
 						<input type="checkbox" name="no_own_nominations" value="1" checked?={ s.NoOwnNominations }/>
-						Members can't vote for their own suggestions
+						{ t(ctx, "Members can't vote for their own suggestions") }
 					</label>
 				</fieldset>
 				<label>
-					Close voting automatically at (optional)
+					{ t(ctx, "Close voting automatically at (optional)") }
 					<input type="datetime-local" name="closes_at" value={ d.ClosesAt }/>
 					@fieldError(d.Errors, "closes_at")
 				</label>
@@ -889,11 +876,11 @@ templ PollFormPage(d PollFormData) {
 					<div class="radio-row">
 						<label class="check">
 							<input type="radio" name="start" value="nominating" checked?={ !d.StartVoting }/>
-							<span><strong>Collect suggestions first</strong>, open voting later</span>
+							<span><strong>{ t(ctx, "Collect suggestions first") }</strong>{ t(ctx, ", open voting later") }</span>
 						</label>
 						<label class="check">
 							<input type="radio" name="start" value="voting" checked?={ d.StartVoting }/>
-							<span><strong>Open voting right away</strong> (suggestions can be added when allowed above)</span>
+							<span><strong>{ t(ctx, "Open voting right away") }</strong>{ " " + t(ctx, "(suggestions can be added when allowed above)") }</span>
 						</label>
 					</div>
 				}
@@ -901,24 +888,24 @@ templ PollFormPage(d PollFormData) {
 			<div class="actions">
 				<button type="submit" class="btn btn-primary">
 					if d.IsNew {
-						Start vote
+						{ t(ctx, "Start vote") }
 					} else {
-						Save changes
+						{ t(ctx, "Save changes") }
 					}
 				</button>
 				if d.IsNew {
-					<a href="/polls" class="btn btn-ghost">Cancel</a>
+					<a href="/polls" class="btn btn-ghost">{ t(ctx, "Cancel") }</a>
 				} else {
-					<a href={ url("/polls/%d", d.Poll.ID) } class="btn btn-ghost">Cancel</a>
+					<a href={ url("/polls/%d", d.Poll.ID) } class="btn btn-ghost">{ t(ctx, "Cancel") }</a>
 				}
 			</div>
 		</form>
 	}
 }
 
-func pollFormTitle(isNew bool) string {
+func pollFormTitle(ctx context.Context, isNew bool) string {
 	if isNew {
-		return "Start a vote"
+		return t(ctx, "Start a vote")
 	}
-	return "Edit vote"
+	return t(ctx, "Edit vote")
 }

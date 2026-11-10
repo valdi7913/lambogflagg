@@ -443,3 +443,8 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 }
 .toast-error { background: var(--danger); color: #fff; }
 .toast[hidden] { display: none; }
+
+/* ---- Language switch ---- */
+.langswitch { font-size: 0.85rem; }
+.auth-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 18px; }
+.auth-head .auth-brand { margin-bottom: 0; }

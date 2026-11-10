@@ -15,19 +15,47 @@ import (
 	"github.com/a-h/templ"
 
 	"bookclub/internal/appctx"
+	"bookclub/internal/i18n"
 	"bookclub/internal/store"
 	"bookclub/internal/views"
+	"bookclub/internal/voting"
 )
 
 // httpError is an error with a status code and a message safe to show users.
+// msg is an English format string, translated when shown.
 type httpError struct {
 	status int
 	msg    string
+	args   []any
 }
 
-func (e httpError) Error() string { return e.msg }
+func (e httpError) Error() string { return fmt.Sprintf(e.msg, e.args...) }
 
-func errStatus(status int, msg string) error { return httpError{status, msg} }
+func errStatus(status int, msg string, args ...any) error { return httpError{status, msg, args} }
+
+// ---- Translation helpers ----
+
+func lang(r *http.Request) i18n.Lang { return appctx.Get(r.Context()).Lang }
+
+func tr(r *http.Request, key string) string { return i18n.T(lang(r), key) }
+
+func trf(r *http.Request, key string, args ...any) string { return i18n.Tf(lang(r), key, args...) }
+
+// trKey marks a string as a translation key that's translated later.
+func trKey(key string) string { return key }
+
+// errText shows an error in the user's language when it's one of ours.
+func errText(r *http.Request, err error) string {
+	var he httpError
+	if errors.As(err, &he) {
+		return i18n.Tf(lang(r), he.msg, he.args...)
+	}
+	var re *voting.RuleError
+	if errors.As(err, &re) {
+		return i18n.Tf(lang(r), re.Format, re.Args...)
+	}
+	return err.Error()
+}
 
 var (
 	errNotFound  = errStatus(http.StatusNotFound, "That page doesn't exist (or was deleted).")
@@ -52,15 +80,16 @@ func (s *Server) h(fn handlerFunc) http.HandlerFunc {
 			he = errNotFound.(httpError)
 		default:
 			slog.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)
-			he = httpError{http.StatusInternalServerError, "Something went wrong on our side. Please try again."}
+			he = errStatus(http.StatusInternalServerError, "Something went wrong on our side. Please try again.").(httpError)
 		}
+		msg := errText(r, he)
 		if isHTMX(r) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(he.status)
-			fmt.Fprint(w, he.msg)
+			fmt.Fprint(w, msg)
 			return
 		}
-		render(w, r, he.status, views.ErrorPage(he.status, he.msg))
+		render(w, r, he.status, views.ErrorPage(he.status, msg))
 	}
 }
 
@@ -89,7 +118,10 @@ func redirect(w http.ResponseWriter, r *http.Request, to string) error {
 
 const flashCookie = "bookclub_flash"
 
-func (s *Server) flash(w http.ResponseWriter, kind, msg string) {
+// flash shows a one-off message on the next page. key is an English format
+// string, translated into the user's language here.
+func (s *Server) flash(w http.ResponseWriter, r *http.Request, kind, key string, args ...any) {
+	msg := trf(r, key, args...)
 	http.SetCookie(w, &http.Cookie{
 		Name: flashCookie, Value: url.QueryEscape(kind + "|" + msg), Path: "/",
 		HttpOnly: true, Secure: s.cfg.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: 60,
@@ -204,7 +236,8 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-func quote(s string) string { return "“" + s + "”" }
+// meetingArg names a meeting in a history message.
+func meetingArg(m *store.Meeting) string { return i18n.ArgMeeting(m.Title, m.StartsAt) }
 
 func timeStr(t *time.Time, loc *time.Location) string {
 	if t == nil {

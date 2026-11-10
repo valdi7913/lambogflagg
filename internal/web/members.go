@@ -34,9 +34,9 @@ func (s *Server) listMembers(w http.ResponseWriter, r *http.Request) error {
 	if id, _ := strconv.ParseInt(r.URL.Query().Get("new"), 10, 64); id > 0 {
 		if inv, err := s.st.InviteByID(r.Context(), id); err == nil && inv.Usable() {
 			d.NewLink = d.BaseURL + "/join/" + inv.Token
-			d.NewLinkLabel = "New invite link"
+			d.NewLinkLabel = tr(r, "New invite link")
 			if inv.Note != "" {
-				d.NewLinkLabel += " for " + inv.Note
+				d.NewLinkLabel = trf(r, "New invite link for %s", inv.Note)
 			}
 		}
 	}
@@ -54,11 +54,11 @@ func (s *Server) createInvite(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.CreateInvite(ctx, q, inv); err != nil {
 			return err
 		}
-		summary := "created an invite link"
+		msg := store.M("created an invite link")
 		if inv.Note != "" {
-			summary += " for " + quote(inv.Note)
+			msg = store.M("created an invite link for “%s”", inv.Note)
 		}
-		return s.st.Log(ctx, q, u.ID, "create", "user", inv.ID, summary, nil)
+		return s.st.Log(ctx, q, u.ID, "create", "user", inv.ID, msg, nil)
 	})
 	if err != nil {
 		return err
@@ -80,16 +80,16 @@ func (s *Server) revokeInvite(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.RevokeInvite(ctx, q, id); err != nil {
 			return err
 		}
-		summary := "revoked an invite link"
+		msg := store.M("revoked an invite link")
 		if inv.Note != "" {
-			summary += " for " + quote(inv.Note)
+			msg = store.M("revoked an invite link for “%s”", inv.Note)
 		}
-		return s.st.Log(ctx, q, user(r).ID, "update", "user", id, summary, nil)
+		return s.st.Log(ctx, q, user(r).ID, "update", "user", id, msg, nil)
 	})
 	if err != nil {
 		return err
 	}
-	s.flash(w, "ok", "Invite revoked.")
+	s.flash(w, r, "ok", "Invite revoked.")
 	return redirect(w, r, "/members")
 }
 
@@ -112,7 +112,7 @@ func (s *Server) createResetLink(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.CreateReset(ctx, q, rs); err != nil {
 			return err
 		}
-		return s.st.Log(ctx, q, u.ID, "update", "user", id, "created a password reset link for "+target.DisplayName, nil)
+		return s.st.Log(ctx, q, u.ID, "update", "user", id, store.M("created a password reset link for %s", target.DisplayName), nil)
 	})
 	if err != nil {
 		return err
@@ -122,7 +122,7 @@ func (s *Server) createResetLink(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	d.NewLink = d.BaseURL + "/reset/" + rs.Token
-	d.NewLinkLabel = "Password reset link for " + target.DisplayName + " (valid 48 hours)"
+	d.NewLinkLabel = trf(r, "Password reset link for %s (valid 48 hours)", target.DisplayName)
 	return ok(w, r, views.MembersPage(d))
 }
 
@@ -154,11 +154,11 @@ func (s *Server) setMemberAdmin(w http.ResponseWriter, r *http.Request) error {
 		if err := s.st.SetAdmin(ctx, q, id, admin); err != nil {
 			return err
 		}
-		summary := "made " + target.DisplayName + " an admin"
+		msg := store.M("made %s an admin", target.DisplayName)
 		if !admin {
-			summary = "removed admin rights from " + target.DisplayName
+			msg = store.M("removed admin rights from %s", target.DisplayName)
 		}
-		return s.st.Log(ctx, q, user(r).ID, "update", "user", id, summary, nil)
+		return s.st.Log(ctx, q, user(r).ID, "update", "user", id, msg, nil)
 	})
 	if err != nil {
 		return err
@@ -192,11 +192,11 @@ func (s *Server) setMemberActive(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		summary := "reactivated " + target.DisplayName
+		msg := store.M("reactivated %s", target.DisplayName)
 		if !active {
-			summary = "deactivated " + target.DisplayName
+			msg = store.M("deactivated %s", target.DisplayName)
 		}
-		return s.st.Log(ctx, q, user(r).ID, "update", "user", id, summary, nil)
+		return s.st.Log(ctx, q, user(r).ID, "update", "user", id, msg, nil)
 	})
 	if err != nil {
 		return err
@@ -208,7 +208,7 @@ func (s *Server) renameClub(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	name := formStr(r, "club_name")
 	if name == "" || len([]rune(name)) > 80 {
-		s.flash(w, "error", "Enter a club name (up to 80 characters).")
+		s.flash(w, r, "error", "Enter a club name (up to 80 characters).")
 		return redirect(w, r, "/members")
 	}
 	old := s.club(ctx)
@@ -217,7 +217,7 @@ func (s *Server) renameClub(w http.ResponseWriter, r *http.Request) error {
 			if err := s.st.SetSetting(ctx, q, "club_name", name); err != nil {
 				return err
 			}
-			return s.st.Log(ctx, q, user(r).ID, "update", "club", 0, "renamed the club",
+			return s.st.Log(ctx, q, user(r).ID, "update", "club", 0, store.M("renamed the club"),
 				store.Diff([][3]string{{"name", old, name}}))
 		})
 		if err != nil {
@@ -225,6 +225,6 @@ func (s *Server) renameClub(w http.ResponseWriter, r *http.Request) error {
 		}
 		s.setClubName(name)
 	}
-	s.flash(w, "ok", "Club renamed.")
+	s.flash(w, r, "ok", "Club renamed.")
 	return redirect(w, r, "/members")
 }
